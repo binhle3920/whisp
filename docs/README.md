@@ -7,6 +7,8 @@ Use these guides to install Whisp, understand its layers, and configure each pro
 - [Getting started](getting-started.md) — install, configure, test, and run Whisp.
 - [Architecture](architecture.md) — understand the input, processor, output, and core
   boundaries.
+- [Personalization](personalization.md) — configure language, personality, priorities,
+  and user context.
 
 ## Inputs
 
@@ -14,7 +16,7 @@ Use these guides to install Whisp, understand its layers, and configure each pro
 
 ## Processors
 
-- [OpenRouter](processors/openrouter.md) — configure the email summarization model.
+- [OpenRouter](processors/openrouter.md) — configure the AI model used by the assistant.
 
 ## Outputs
 

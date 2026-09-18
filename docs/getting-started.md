@@ -37,6 +37,7 @@ Complete each integration guide before starting Whisp:
 1. [Configure the Gmail input](inputs/gmail.md)
 2. [Configure the OpenRouter processor](processors/openrouter.md)
 3. [Configure the Telegram output](outputs/telegram.md)
+4. [Personalize your assistant](personalization.md) (optional)
 
 Your `.env` file should then contain values for these required settings:
 
@@ -58,8 +59,8 @@ uv run whisp poll --backfill
 ```
 
 Whisp checks the Telegram bot, reads up to 25 recent inbox messages, sends their content
-to the configured OpenRouter model, and delivers each summary to Telegram. It prints a
-result similar to:
+to the configured OpenRouter model, and delivers each personalized briefing to Telegram.
+It prints a result similar to:
 
 ```json
 {

@@ -1,7 +1,8 @@
 # OpenRouter processor
 
-The OpenRouter processor turns an email into a concise summary. Whisp sends extracted
-email text to OpenRouter and uses the returned text as the processor result.
+The OpenRouter processor turns an email into a personalized inbox briefing. Whisp sends
+the extracted email text and your assistant profile to OpenRouter, then uses the returned
+text as the processor result.
 
 ## What you need
 
@@ -60,8 +61,11 @@ After configuring the input and output, run:
 uv run whisp poll --backfill
 ```
 
-A successful request produces a Telegram message containing a short summary. You can also
-inspect usage and cost from your OpenRouter activity page.
+A successful request produces a Telegram message containing a personalized briefing.
+You can also inspect usage and cost from your OpenRouter activity page.
+
+To control the assistant's personality, language, priorities, and knowledge about you,
+follow the [personalization guide](../personalization.md).
 
 ## Data handling
 
@@ -94,8 +98,8 @@ Confirm the exact provider/model slug in `WHISP_OPENROUTER_MODEL`.
 Whisp retries rate limits and temporary server errors up to three times. If the batch
 still fails, wait before polling again or choose a provider with available capacity.
 
-### Empty or poor summaries
+### Empty or poor responses
 
-Try another model slug. Whisp requests two to four concise sentences containing the main
-point, required action, deadlines, and important numbers.
-
+Review your assistant profile and try another model slug. Whisp asks for a concise,
+actionable briefing containing the reason the email matters, the next action, deadlines,
+and important numbers.

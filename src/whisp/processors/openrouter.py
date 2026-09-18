@@ -5,6 +5,7 @@ import httpx
 
 from whisp.core.models import EmailMessage
 from whisp.processors.base import BaseEmailProcessor
+from whisp.processors.profile import AssistantProfile
 
 
 class OpenRouterProcessor(BaseEmailProcessor):
@@ -18,12 +19,14 @@ class OpenRouterProcessor(BaseEmailProcessor):
         client: httpx.AsyncClient,
         site_url: str | None = None,
         app_title: str = "Whisp",
+        profile: AssistantProfile | None = None,
     ) -> None:
         self.api_key = api_key
         self.model = model
         self.client = client
         self.site_url = site_url
         self.app_title = app_title
+        self.profile = profile or AssistantProfile()
 
     async def process(self, message: EmailMessage) -> str:
         headers = {
@@ -43,12 +46,7 @@ class OpenRouterProcessor(BaseEmailProcessor):
                     "messages": [
                         {
                             "role": "system",
-                            "content": (
-                                "Summarize this email for its recipient. Use the email's "
-                                "language. Write 2-4 concise sentences. State the main point, "
-                                "required action, and any deadline or important number. Do not "
-                                "invent facts. Output only the summary."
-                            ),
+                            "content": self.profile.system_prompt(),
                         },
                         {
                             "role": "user",
@@ -58,7 +56,7 @@ class OpenRouterProcessor(BaseEmailProcessor):
                             ),
                         },
                     ],
-                    "max_tokens": 300,
+                    "max_tokens": 400,
                 },
             )
             if response.status_code != 429 and response.status_code < 500:

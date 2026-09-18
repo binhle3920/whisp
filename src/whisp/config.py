@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     openrouter_model: str = "openai/gpt-5.4-nano"
     openrouter_site_url: str | None = None
     openrouter_app_title: str = "Whisp"
+    assistant_profile_path: Path = Path("config/assistant.toml")
     telegram_bot_token: SecretStr | None = None
     telegram_chat_id: str | None = None
 

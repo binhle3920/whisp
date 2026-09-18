@@ -8,7 +8,7 @@ core.
 │ Input          │    │ Processor      │    │ Output         │
 │                │    │                │    │                │
 │ Gmail          │───▶│ OpenRouter     │───▶│ Telegram       │
-│                │    │ summarization  │    │ notification   │
+│                │    │ assistant      │    │ notification   │
 └────────────────┘    └────────────────┘    └────────────────┘
          │                     ▲                     ▲
          └─────────────────────┴─────────────────────┘
@@ -62,7 +62,7 @@ provider for each layer, and injects those providers into the pipeline. `app.py`
 1. The input reports message IDs after its stored cursor.
 2. The core skips IDs already recorded in SQLite.
 3. The input converts each provider payload into a common `EmailMessage`.
-4. The processor transforms the message into summary text.
+4. The processor transforms the message into a personalized briefing.
 5. The output formats and delivers the notification.
 6. The core records the message as processed and advances the cursor after a successful
    batch.
@@ -76,7 +76,7 @@ does not silently lose it.
 Add a provider inside the layer it implements:
 
 - An inbox or event source inherits `BaseEmailInput` under `inputs/`.
-- A summarizer or classifier inherits `BaseEmailProcessor` under `processors/`.
+- An assistant, summarizer, or classifier inherits `BaseEmailProcessor` under `processors/`.
 - A notification destination inherits `BaseNotificationOutput` under `outputs/`.
 
 Keep provider-specific authentication, payload parsing, retries, and formatting inside

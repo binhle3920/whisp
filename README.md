@@ -2,21 +2,21 @@
 
 > An AI layer between your inbox and you.
 
-Whisp is an open-source, self-hosted service that turns incoming email into concise,
-useful notifications. It watches your inbox, extracts the readable content, summarizes
-the message with an AI model, and delivers the result to the channel where you want to
+Whisp is an open-source, self-hosted service that turns incoming email into personalized,
+useful notifications. It watches your inbox, extracts the readable content, asks an AI
+assistant what matters to you, and delivers the result to the channel where you want to
 see it.
 
 The first release is deliberately small and personal:
 
 - Gmail is the inbox provider.
-- OpenRouter provides the summarization model.
+- OpenRouter provides the AI model.
 - Telegram delivers notifications.
 - SQLite keeps the Gmail cursor and prevents duplicate notifications.
 
 ```text
 Input          Processor             Output
-Gmail    →     OpenRouter summary    →    Telegram
+Gmail    →     Personal AI assistant →    Telegram
 ```
 
 Whisp requests read-only access to Gmail and never modifies your messages. It stores
@@ -27,6 +27,7 @@ server, or private host.
 
 - [Getting started](docs/getting-started.md)
 - [Architecture](docs/architecture.md)
+- [Personalization](docs/personalization.md)
 - [Gmail input](docs/inputs/gmail.md)
 - [OpenRouter processor](docs/processors/openrouter.md)
 - [Telegram output](docs/outputs/telegram.md)
@@ -34,7 +35,7 @@ server, or private host.
 
 ## Project status
 
-Whisp is an early working release focused on proving the complete email-to-summary
+Whisp is an early working release focused on proving the complete email-to-assistant
 workflow. Future versions can add inbox providers, notification channels, filtering,
 priority decisions, and richer self-hosting controls.
 

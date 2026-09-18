@@ -6,9 +6,11 @@ services:
     environment:
       WHISP_DB_PATH: /data/whisp.db
       WHISP_CREDENTIALS_DIR: /credentials
+      WHISP_ASSISTANT_PROFILE_PATH: /config/assistant.toml
     volumes:
       - ./data:/data
       - ./credentials:/credentials:ro
+      - ./config:/config:ro
     ports:
       - "8080:8080"
     healthcheck:

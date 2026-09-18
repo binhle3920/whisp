@@ -7,6 +7,7 @@ from whisp.inputs.gmail import GmailInput
 from whisp.inputs.gmail.auth import GmailAuth
 from whisp.outputs.telegram import TelegramOutput
 from whisp.processors.openrouter import OpenRouterProcessor
+from whisp.processors.profile import AssistantProfile
 
 
 def build_pipeline(settings: Settings, client: httpx.AsyncClient) -> Pipeline:
@@ -23,6 +24,7 @@ def build_pipeline(settings: Settings, client: httpx.AsyncClient) -> Pipeline:
             client=client,
             site_url=settings.openrouter_site_url,
             app_title=settings.openrouter_app_title,
+            profile=AssistantProfile.from_file(settings.assistant_profile_path),
         ),
         output=TelegramOutput(
             settings.telegram_bot_token.get_secret_value(), settings.telegram_chat_id, client
