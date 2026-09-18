@@ -14,9 +14,7 @@ async def test_openrouter_processor_sends_expected_request() -> None:
         return_value=httpx.Response(
             200,
             json={
-                "choices": [
-                    {"message": {"role": "assistant", "content": "Review it by Friday."}}
-                ]
+                "choices": [{"message": {"role": "assistant", "content": "Review it by Friday."}}]
             },
         )
     )
@@ -51,6 +49,9 @@ async def test_openrouter_processor_sends_expected_request() -> None:
     assert "Direct and pragmatic." in system_prompt
     assert "Vietnamese" in system_prompt
     assert "- Project deadlines" in system_prompt
+    assert "natural conversational language" in system_prompt
+    assert "do not repeat From, To, or Subject" in system_prompt
+    assert "headings, labels, bullet lists, Markdown, or HTML" in system_prompt
 
 
 def test_assistant_profile_loads_from_toml(tmp_path) -> None:

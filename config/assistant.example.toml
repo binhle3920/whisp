@@ -5,8 +5,8 @@ personality = "Calm, direct, thoughtful, and proactive."
 # Whisp always responds in this language, even when an email uses another language.
 default_language = "English"
 
-# Describe the shape and level of detail you prefer.
-response_style = "Keep it brief. Lead with why it matters, then give me the next action."
+# Describe how you want messages to feel. Avoid prescribing headings or a rigid template.
+response_style = "Talk to me naturally like a trusted assistant. Keep it brief and varied."
 
 # Give Whisp enough context to judge relevance. Avoid putting secrets here.
 user_context = """
@@ -22,4 +22,4 @@ priorities = [
 ]
 
 # Optional rules specific to your workflow.
-custom_instructions = "Call out suspicious requests and clearly say when no action is needed."
+custom_instructions = "Call out suspicious requests. For promotions, briefly say what the offer is."

@@ -64,11 +64,14 @@ The manual poll command checks the bot token before processing email:
 uv run whisp poll --backfill
 ```
 
-If configuration is valid and a recent email is processed, the bot sends a plain-text
-message containing the sender, subject, and summary.
+If configuration is valid and a recent email is processed, the bot sends a short,
+conversational plain-text notification. The AI-written message comes first; a compact
+sender line and a direct Gmail link appear below a plain-text divider at the bottom. The
+subject is not repeated.
 
 Whisp sends plain text without Telegram parse mode. This prevents email or model-generated
-punctuation from breaking Markdown or HTML formatting.
+punctuation from breaking Markdown or HTML formatting. It also removes common Markdown
+markers if a model returns them despite the prompt.
 
 ## Troubleshooting
 
@@ -94,4 +97,3 @@ Open the bot chat, unblock it, and select **Start** before polling again.
 
 Telegram limits a message to 4,096 characters. Whisp truncates oversized notification
 text before sending it.
-
