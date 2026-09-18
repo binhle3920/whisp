@@ -66,8 +66,9 @@ uv run whisp poll --backfill
 
 If configuration is valid and a recent email is processed, the bot sends a short,
 conversational plain-text notification. The AI-written message comes first; a compact
-sender line and a direct Gmail link appear below a plain-text divider at the bottom. The
-subject is not repeated.
+sender section and a direct Gmail link appear below a plain-text divider at the bottom.
+When available, the sender's display name and actual email address are shown separately
+so misleading display names are easier to spot. The subject is not repeated.
 
 Whisp sends plain text without Telegram parse mode. This prevents email or model-generated
 punctuation from breaking Markdown or HTML formatting. It also removes common Markdown

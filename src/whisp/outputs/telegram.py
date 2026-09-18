@@ -22,10 +22,15 @@ class TelegramOutput(BaseNotificationOutput):
 
     async def send(self, message: EmailMessage, processed_text: str) -> None:
         sender_name, sender_address = parseaddr(message.sender)
-        sender = sender_name or sender_address or message.sender
-        sender = re.sub(r"\s+", " ", sender).strip()[:120]
+        sender_name = re.sub(r"\s+", " ", sender_name).strip()[:120]
+        sender_address = re.sub(r"\s+", " ", sender_address).strip()[:254]
+        if sender_name and sender_address:
+            sender_details = f"Từ: {sender_name}\nEmail: {sender_address}"
+        else:
+            sender = sender_address or re.sub(r"\s+", " ", message.sender).strip()[:254]
+            sender_details = f"Từ: {sender}"
         gmail_id = quote(message.thread_id or message.id, safe="")
-        footer = f"Từ: {sender}\nMở email: https://mail.google.com/mail/u/0/#inbox/{gmail_id}"
+        footer = f"{sender_details}\nMở email: https://mail.google.com/mail/u/0/#inbox/{gmail_id}"
 
         content = _plain_text(processed_text)
         divider = "----"

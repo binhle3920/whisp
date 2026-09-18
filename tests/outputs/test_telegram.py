@@ -34,6 +34,7 @@ async def test_telegram_sends_conversational_plain_text_with_gmail_link() -> Non
             "Bạn có ưu đãi trả góp 0%. Xem ưu đãi (https://example.com/deal)\n\n"
             "----\n\n"
             "Từ: Techcombank\n"
+            "Email: offers@techcombank.com\n"
             "Mở email: https://mail.google.com/mail/u/0/#inbox/thread-1"
         ),
     }
