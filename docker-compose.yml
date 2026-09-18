@@ -1,0 +1,18 @@
+services:
+  whisp:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WHISP_DB_PATH: /data/whisp.db
+      WHISP_CREDENTIALS_DIR: /credentials
+    volumes:
+      - ./data:/data
+      - ./credentials:/credentials:ro
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
