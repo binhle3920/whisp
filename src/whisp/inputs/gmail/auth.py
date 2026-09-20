@@ -20,9 +20,7 @@ class GmailAuth:
                     raise RuntimeError(
                         f"Gmail token not found at {self.token_path}. Run `whisp authorize`."
                     )
-                self._credentials = Credentials.from_authorized_user_file(
-                    self.token_path, SCOPES
-                )
+                self._credentials = Credentials.from_authorized_user_file(self.token_path, SCOPES)
             if not self._credentials.valid:
                 if not self._credentials.refresh_token:
                     raise RuntimeError(
@@ -32,4 +30,3 @@ class GmailAuth:
             if not self._credentials.token:
                 raise RuntimeError("Gmail authorization did not return an access token")
             return self._credentials.token
-

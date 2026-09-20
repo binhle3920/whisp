@@ -47,4 +47,3 @@ def test_falls_back_to_html() -> None:
     message = parse_message(raw, max_chars=1000)
     assert "Hello & welcome" in message.body
     assert "Second line" in message.body
-

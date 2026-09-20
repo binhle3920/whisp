@@ -18,4 +18,3 @@ class PollResult:
     skipped: int = 0
     failed: int = 0
     initialized: bool = False
-

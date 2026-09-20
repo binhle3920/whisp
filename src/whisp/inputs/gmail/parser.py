@@ -56,4 +56,3 @@ def parse_message(payload: dict[str, Any], *, max_chars: int) -> EmailMessage:
         body=body or "(empty message)",
         internal_date=payload.get("internalDate"),
     )
-
