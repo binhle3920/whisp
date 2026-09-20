@@ -52,14 +52,31 @@ class Pipeline:
                         return result
                     initialized = False
 
-                ids = ids[: self.max_messages]
                 discovered = len(ids)
-                notified = skipped = failed = 0
+                # Messages already delivered in an earlier run are skipped without
+                # consuming budget, so the batch limit applies to the work that is
+                # actually left. Otherwise a re-read of the same range would refill
+                # the batch with skips and never reach the tail.
+                outstanding = [
+                    message_id for message_id in ids if not self.store.is_processed(message_id)
+                ]
+                skipped = discovered - len(outstanding)
+                # Truncating means the tail of this history range is not processed in
+                # this run. Hold the cursor back so those messages are rediscovered;
+                # advancing past them would drop them silently.
+                pending = max(0, len(outstanding) - self.max_messages)
+                if pending:
+                    outstanding = outstanding[: self.max_messages]
+                    logger.info(
+                        "Discovered %d messages, processing %d this run; "
+                        "%d deferred to the next run",
+                        discovered,
+                        len(outstanding),
+                        pending,
+                    )
+                notified = failed = 0
                 last_error: str | None = None
-                for message_id in reversed(ids) if backfill else ids:
-                    if self.store.is_processed(message_id):
-                        skipped += 1
-                        continue
+                for message_id in reversed(outstanding) if backfill else outstanding:
                     try:
                         message = await self.input.fetch(message_id, max_chars=self.email_max_chars)
                         processed_text = await self.processor.process(message)
@@ -75,8 +92,10 @@ class Pipeline:
                             safe_error_message(exc),
                         )
 
-                result = PollResult(discovered, notified, skipped, failed, initialized)
-                if failed == 0:
+                result = PollResult(discovered, notified, skipped, failed, initialized, pending)
+                # Only advance once the whole range is accounted for: any failure or
+                # any deferred message means next_cursor covers unprocessed mail.
+                if failed == 0 and pending == 0:
                     self.store.set("history_id", next_cursor)
                 self._finish(run_id, result, error=last_error)
                 return result

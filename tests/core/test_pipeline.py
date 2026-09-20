@@ -128,3 +128,66 @@ async def test_pipeline_sanitizes_stored_and_raised_errors(tmp_path) -> None:
     assert str(exc_info.value) == "Unexpected RuntimeError"
     assert store.status()["last_run"]["error"] == "Unexpected RuntimeError"
     assert "secret-oauth-token" not in str(exc_info.value)
+
+
+async def test_high_volume_changes_are_processed_across_runs(tmp_path) -> None:
+    """A burst larger than max_messages must drain fully, not be truncated away."""
+    input_source = FakeInput()
+    input_source.ids = [f"message-{index}" for index in range(100)]
+    output = RecordingOutput()
+    store = Store(tmp_path / "whisp.db")
+    store.set("history_id", "100")
+    pipeline = Pipeline(
+        store=store,
+        input_source=input_source,
+        processor=FakeProcessor(),
+        output=output,
+        max_messages=25,
+        email_max_chars=12_000,
+    )
+
+    first = await pipeline.run_once()
+    assert first.discovered == 100
+    assert first.notified == 25
+    assert first.pending == 75
+    # The cursor must not move past messages this run did not process.
+    assert store.get("history_id") == "100"
+
+    # Drain the rest. The provider keeps returning the same range until the
+    # cursor advances, and already-delivered messages are skipped by dedup.
+    for _ in range(3):
+        await pipeline.run_once()
+
+    delivered = {message_id for message_id, _ in output.sent}
+    assert len(delivered) == 100
+    assert store.get("history_id") == "101"
+
+    final = await pipeline.run_once()
+    assert final.notified == 0
+    assert final.pending == 0
+
+
+async def test_cursor_is_held_back_until_batch_is_fully_processed(tmp_path) -> None:
+    input_source = FakeInput()
+    input_source.ids = ["message-1", "message-2", "message-3"]
+    store = Store(tmp_path / "whisp.db")
+    store.set("history_id", "100")
+    pipeline = Pipeline(
+        store=store,
+        input_source=input_source,
+        processor=FakeProcessor(),
+        output=RecordingOutput(),
+        max_messages=2,
+        email_max_chars=12_000,
+    )
+
+    result = await pipeline.run_once()
+    assert result.discovered == 3
+    assert result.notified == 2
+    assert result.pending == 1
+    assert store.get("history_id") == "100"
+
+    final = await pipeline.run_once()
+    assert final.notified == 1
+    assert final.pending == 0
+    assert store.get("history_id") == "101"
