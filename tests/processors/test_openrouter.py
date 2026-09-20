@@ -1,8 +1,10 @@
 import json
 
 import httpx
+import pytest
 import respx
 
+from whisp.core.errors import ProviderError
 from whisp.core.models import EmailMessage
 from whisp.processors.openrouter import OpenRouterProcessor
 from whisp.processors.profile import AssistantProfile
@@ -79,3 +81,23 @@ def test_missing_assistant_profile_uses_defaults(tmp_path) -> None:
     profile = AssistantProfile.from_file(tmp_path / "missing.toml")
 
     assert profile.default_language == "English"
+
+
+@respx.mock
+async def test_openrouter_failure_does_not_expose_api_key_or_email_body() -> None:
+    api_key = "secret-openrouter-key"
+    email_body = "confidential email body"
+    respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        return_value=httpx.Response(401, text=f"{api_key}: {email_body}")
+    )
+    message = EmailMessage("m1", "t1", "alice@example.com", "Private", email_body)
+
+    async with httpx.AsyncClient() as client:
+        processor = OpenRouterProcessor(api_key=api_key, model="test-model", client=client)
+        with pytest.raises(ProviderError) as exc_info:
+            await processor.process(message)
+
+    error = str(exc_info.value)
+    assert error == "OpenRouter request failed with HTTP 401"
+    assert api_key not in error
+    assert email_body not in error

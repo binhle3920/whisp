@@ -92,7 +92,12 @@ uv run whisp serve
 Whisp checks Gmail every 60 seconds by default. The local operational endpoints are:
 
 - `GET http://localhost:8080/healthz`
+- `GET http://localhost:8080/readyz`
 - `GET http://localhost:8080/status`
+
+`/healthz` only confirms that the process is running. `/readyz` returns a cached readiness
+snapshot for SQLite, Gmail, and Telegram, while `/status` includes the latest poll and
+sanitized failure details. These endpoints do not make provider requests themselves.
 
 You can inspect the same local state from the terminal:
 

@@ -15,3 +15,27 @@ def test_cursor_and_deduplication(tmp_path) -> None:
     assert store.is_processed("m1")
     assert store.status()["processed_messages"] == 1
 
+
+def test_status_reports_run_timing_success_and_sanitized_failure(tmp_path) -> None:
+    store = Store(tmp_path / "whisp.db")
+    successful_run = store.start_run()
+    store.finish_run(successful_run, discovered=1, notified=1, skipped=0, failed=0)
+    failed_run = store.start_run()
+    store.finish_run(
+        failed_run,
+        discovered=1,
+        notified=0,
+        skipped=0,
+        failed=1,
+        error="Telegram send failed with HTTP 503",
+    )
+
+    result = store.status()
+
+    assert result["last_successful_poll_at"] is not None
+    assert result["last_run"]["duration_ms"] >= 0
+    assert result["last_failure"] == {
+        "finished_at": result["last_run"]["finished_at"],
+        "failed": 1,
+        "error": "Telegram send failed with HTTP 503",
+    }

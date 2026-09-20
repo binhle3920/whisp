@@ -1,3 +1,8 @@
+import logging
+
+import pytest
+
+from whisp.core.errors import SafeWhispError
 from whisp.core.models import EmailMessage
 from whisp.core.pipeline import Pipeline
 from whisp.core.store import Store
@@ -32,6 +37,16 @@ class FakeInput(BaseEmailInput):
 class FakeProcessor(BaseEmailProcessor):
     async def process(self, message: EmailMessage) -> str:
         return f"Summary of {message.subject}"
+
+
+class LeakyProcessor(BaseEmailProcessor):
+    async def process(self, message: EmailMessage) -> str:
+        raise RuntimeError(message.body)
+
+
+class LeakyInput(FakeInput):
+    async def changes(self, cursor: str) -> tuple[list[str], str]:
+        raise RuntimeError("secret-oauth-token")
 
 
 class RecordingOutput(BaseNotificationOutput):
@@ -71,3 +86,45 @@ async def test_initializes_then_delivers_and_deduplicates(tmp_path) -> None:
     third = await pipeline.run_once()
     assert third.skipped == 1
     assert len(output.sent) == 1
+
+
+async def test_pipeline_sanitizes_message_failure_logs(tmp_path, caplog) -> None:
+    input_source = FakeInput()
+    input_source.ids = ["message-1"]
+    store = Store(tmp_path / "whisp.db")
+    store.set("history_id", "100")
+    pipeline = Pipeline(
+        store=store,
+        input_source=input_source,
+        processor=LeakyProcessor(),
+        output=RecordingOutput(),
+        max_messages=25,
+        email_max_chars=12_000,
+    )
+
+    with caplog.at_level(logging.ERROR):
+        result = await pipeline.run_once()
+
+    assert result.failed == 1
+    assert "Please review by Friday" not in caplog.text
+    assert "Unexpected RuntimeError" in caplog.text
+
+
+async def test_pipeline_sanitizes_stored_and_raised_errors(tmp_path) -> None:
+    store = Store(tmp_path / "whisp.db")
+    store.set("history_id", "100")
+    pipeline = Pipeline(
+        store=store,
+        input_source=LeakyInput(),
+        processor=FakeProcessor(),
+        output=RecordingOutput(),
+        max_messages=25,
+        email_max_chars=12_000,
+    )
+
+    with pytest.raises(SafeWhispError) as exc_info:
+        await pipeline.run_once()
+
+    assert str(exc_info.value) == "Unexpected RuntimeError"
+    assert store.status()["last_run"]["error"] == "Unexpected RuntimeError"
+    assert "secret-oauth-token" not in str(exc_info.value)

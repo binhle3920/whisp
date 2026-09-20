@@ -2,6 +2,7 @@ from typing import Any
 
 import httpx
 
+from whisp.core.errors import ProviderError
 from whisp.core.models import EmailMessage
 from whisp.inputs.base import BaseEmailInput, InputCursorExpired
 from whisp.inputs.gmail.auth import GmailAuth
@@ -16,16 +17,31 @@ class GmailInput(BaseEmailInput):
         self.client = client
 
     async def _get(self, path: str, params: list[tuple[str, str]] | None = None) -> dict[str, Any]:
-        token = await self.auth.access_token()
-        response = await self.client.get(
-            f"{self.base_url}/{path}",
-            params=params,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        try:
+            token = await self.auth.access_token()
+        except Exception:
+            raise ProviderError("Gmail", "authentication") from None
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/{path}",
+                params=params,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        except httpx.HTTPError:
+            raise ProviderError("Gmail", "request") from None
         if response.status_code == 404 and path == "history":
             raise InputCursorExpired
-        response.raise_for_status()
-        return response.json()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            raise ProviderError("Gmail", "request", status_code=response.status_code) from None
+        try:
+            data = response.json()
+        except ValueError:
+            raise ProviderError("Gmail", "response decoding") from None
+        if not isinstance(data, dict):
+            raise ProviderError("Gmail", "response decoding")
+        return data
 
     async def current_cursor(self) -> str:
         profile = await self._get("profile")

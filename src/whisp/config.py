@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     max_messages_per_run: int = Field(default=25, ge=1, le=500)
     email_max_chars: int = Field(default=12_000, ge=1_000)
     poller_enabled: bool = True
+    readiness_check_interval_seconds: int = Field(default=300, ge=30)
     log_level: str = "INFO"
 
     @property

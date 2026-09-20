@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 import httpx
 
+from whisp.core.errors import ProviderError
 from whisp.core.models import EmailMessage
 from whisp.outputs.base import BaseNotificationOutput
 
@@ -15,10 +16,7 @@ class TelegramOutput(BaseNotificationOutput):
         self.client = client
 
     async def check(self) -> None:
-        response = await self.client.get(self.url.replace("sendMessage", "getMe"))
-        response.raise_for_status()
-        if not response.json().get("ok"):
-            raise RuntimeError("Telegram rejected the bot token")
+        await self._request("check", self.client.get, self.url.replace("sendMessage", "getMe"))
 
     async def send(self, message: EmailMessage, processed_text: str) -> None:
         sender_name, sender_address = parseaddr(message.sender)
@@ -30,19 +28,41 @@ class TelegramOutput(BaseNotificationOutput):
             sender = sender_address or re.sub(r"\s+", " ", message.sender).strip()[:254]
             sender_details = f"Từ: {sender}"
         gmail_id = quote(message.thread_id or message.id, safe="")
-        footer = f"{sender_details}\nMở email: https://mail.google.com/mail/u/0/#inbox/{gmail_id}"
+        gmail_url = f"https://mail.google.com/mail/u/0/#inbox/{gmail_id}"
 
         content = _plain_text(processed_text)
         divider = "----"
-        content_limit = 4096 - len(footer) - len(divider) - 4
+        content_limit = 4096 - len(sender_details) - len(divider) - 4
         if len(content) > content_limit:
             content = content[: content_limit - 3].rstrip() + "..."
-        text = f"{content}\n\n{divider}\n\n{footer}"
-        response = await self.client.post(self.url, json={"chat_id": self.chat_id, "text": text})
-        response.raise_for_status()
-        data = response.json()
-        if not data.get("ok"):
-            raise RuntimeError(f"Telegram send failed: {data.get('description', 'unknown error')}")
+        text = f"{content}\n\n{divider}\n\n{sender_details}"
+        await self._request(
+            "send",
+            self.client.post,
+            self.url,
+            json={
+                "chat_id": self.chat_id,
+                "text": text,
+                "reply_markup": {"inline_keyboard": [[{"text": "Mở email", "url": gmail_url}]]},
+            },
+        )
+
+    async def _request(self, operation: str, request, url: str, **kwargs):
+        try:
+            response = await request(url, **kwargs)
+        except httpx.HTTPError:
+            raise ProviderError("Telegram", operation) from None
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError:
+            raise ProviderError("Telegram", operation, status_code=response.status_code) from None
+        try:
+            data = response.json()
+        except ValueError:
+            raise ProviderError("Telegram", f"{operation} response decoding") from None
+        if not isinstance(data, dict) or not data.get("ok"):
+            raise ProviderError("Telegram", operation)
+        return data
 
 
 def _plain_text(value: str) -> str:

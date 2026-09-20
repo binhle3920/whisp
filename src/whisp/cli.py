@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import json
-import logging
 
 import httpx
 import uvicorn
@@ -10,6 +9,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from whisp.config import get_settings
 from whisp.core.store import Store
 from whisp.inputs.gmail.auth import SCOPES
+from whisp.logging_config import configure_logging
 from whisp.runtime import build_pipeline
 
 
@@ -29,7 +29,7 @@ def _authorize() -> None:
 
 async def _poll(backfill: bool) -> None:
     settings = get_settings()
-    logging.basicConfig(level=settings.log_level.upper())
+    configure_logging(settings.log_level)
     async with httpx.AsyncClient(timeout=30) as client:
         pipeline = build_pipeline(settings, client)
         await pipeline.output.check()

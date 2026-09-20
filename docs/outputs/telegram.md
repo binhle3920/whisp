@@ -66,7 +66,8 @@ uv run whisp poll --backfill
 
 If configuration is valid and a recent email is processed, the bot sends a short,
 conversational plain-text notification. The AI-written message comes first; a compact
-sender section and a direct Gmail link appear below a plain-text divider at the bottom.
+sender section appears below a plain-text divider, followed by an inline **Mở email**
+button that opens the Gmail thread.
 When available, the sender's display name and actual email address are shown separately
 so misleading display names are easier to spot. The subject is not repeated.
 
@@ -97,4 +98,4 @@ Open the bot chat, unblock it, and select **Start** before polling again.
 ### Notification is too long
 
 Telegram limits a message to 4,096 characters. Whisp truncates oversized notification
-text before sending it.
+text before sending it while preserving the sender details and Gmail button.

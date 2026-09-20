@@ -5,8 +5,12 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from whisp.config import get_settings
+from whisp.core.errors import safe_error_message
+from whisp.core.readiness import ReadinessMonitor
+from whisp.logging_config import configure_logging
 from whisp.runtime import build_pipeline
 
 logger = logging.getLogger(__name__)
@@ -25,31 +29,40 @@ async def _poll_forever(app: FastAPI) -> None:
         await asyncio.sleep(settings.poll_interval_seconds)
 
 
+async def _check_readiness_forever(app: FastAPI) -> None:
+    settings = app.state.settings
+    while True:
+        try:
+            await app.state.readiness.refresh()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Readiness refresh failed: %s", safe_error_message(exc))
+        await asyncio.sleep(settings.readiness_check_interval_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-    # Provider request URLs can contain credentials (notably Telegram bot tokens).
-    # Keep third-party transport logs out of normal application output.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    configure_logging(settings.log_level)
     client = httpx.AsyncClient(timeout=30)
     app.state.settings = settings
     app.state.store = None
-    task = None
+    app.state.readiness = None
+    tasks: list[asyncio.Task] = []
     try:
         pipeline = build_pipeline(settings, client)
         app.state.pipeline = pipeline
         app.state.store = pipeline.store
+        app.state.readiness = ReadinessMonitor(pipeline)
+        tasks.append(asyncio.create_task(_check_readiness_forever(app)))
         if settings.poller_enabled:
-            task = asyncio.create_task(_poll_forever(app))
+            tasks.append(asyncio.create_task(_poll_forever(app)))
         yield
     finally:
-        if task:
+        for task in tasks:
             task.cancel()
+        for task in tasks:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         await client.aclose()
@@ -63,8 +76,26 @@ async def health(request: Request) -> dict[str, object]:
     return {"ok": True, "poller_enabled": request.app.state.settings.poller_enabled}
 
 
+@app.get("/readyz")
+async def readiness(request: Request) -> JSONResponse:
+    monitor = request.app.state.readiness
+    snapshot = (
+        monitor.snapshot()
+        if monitor is not None
+        else {
+            "ready": False,
+            "checked_at": None,
+            "checks": {},
+        }
+    )
+    return JSONResponse(status_code=200 if snapshot["ready"] else 503, content=snapshot)
+
+
 @app.get("/status")
 async def status(request: Request) -> dict[str, object]:
     if request.app.state.store is None:
         raise HTTPException(503, "Whisp is not configured")
-    return request.app.state.store.status()
+    result = request.app.state.store.status()
+    monitor = request.app.state.readiness
+    result["readiness"] = monitor.snapshot() if monitor is not None else None
+    return result

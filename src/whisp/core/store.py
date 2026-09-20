@@ -1,6 +1,7 @@
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from whisp.core.models import EmailMessage
@@ -85,7 +86,9 @@ class Store:
 
     def start_run(self) -> int:
         with self._connect() as db:
-            cursor = db.execute("INSERT INTO runs DEFAULT VALUES")
+            cursor = db.execute(
+                "INSERT INTO runs(started_at) VALUES (?)", (datetime.now(UTC).isoformat(),)
+            )
             return int(cursor.lastrowid)
 
     def finish_run(
@@ -101,19 +104,56 @@ class Store:
         with self._connect() as db:
             db.execute(
                 """
-                UPDATE runs SET finished_at=datetime('now'), discovered=?, notified=?,
+                UPDATE runs SET finished_at=?, discovered=?, notified=?,
                     skipped=?, failed=?, error=? WHERE id=?
                 """,
-                (discovered, notified, skipped, failed, error, run_id),
+                (
+                    datetime.now(UTC).isoformat(),
+                    discovered,
+                    notified,
+                    skipped,
+                    failed,
+                    error,
+                    run_id,
+                ),
             )
 
     def status(self) -> dict[str, object]:
         with self._connect() as db:
-            run = db.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+            run = db.execute(
+                """
+                SELECT *, CASE WHEN finished_at IS NULL THEN NULL ELSE
+                    CAST((julianday(finished_at) - julianday(started_at)) * 86400000 AS INTEGER)
+                    END AS duration_ms
+                FROM runs ORDER BY id DESC LIMIT 1
+                """
+            ).fetchone()
+            last_success = db.execute(
+                """
+                SELECT finished_at FROM runs
+                WHERE finished_at IS NOT NULL AND failed = 0 AND error IS NULL
+                ORDER BY id DESC LIMIT 1
+                """
+            ).fetchone()
+            last_failure = db.execute(
+                """
+                SELECT finished_at, failed, error FROM runs
+                WHERE failed > 0 OR error IS NOT NULL
+                ORDER BY id DESC LIMIT 1
+                """
+            ).fetchone()
             count = db.execute("SELECT COUNT(*) AS count FROM processed_messages").fetchone()
+            cursor = db.execute("SELECT value FROM kv WHERE key = 'history_id'").fetchone()
         return {
-            "history_id": self.get("history_id"),
+            "history_id": str(cursor["value"]) if cursor else None,
             "processed_messages": int(count["count"]),
             "last_run": dict(run) if run else None,
+            "last_successful_poll_at": last_success["finished_at"] if last_success else None,
+            "last_failure": dict(last_failure) if last_failure else None,
+            "queue": {
+                "available": False,
+                "pending": 0,
+                "retrying": 0,
+                "dead_letter": 0,
+            },
         }
-

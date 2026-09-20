@@ -14,3 +14,9 @@ def test_assistant_profile_has_a_local_default_path() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.assistant_profile_path == Path("config/assistant.toml")
+
+
+def test_readiness_checks_default_to_a_five_minute_cache() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.readiness_check_interval_seconds == 300

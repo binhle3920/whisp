@@ -1,8 +1,10 @@
 import json
 
 import httpx
+import pytest
 import respx
 
+from whisp.core.errors import ProviderError
 from whisp.core.models import EmailMessage
 from whisp.outputs.telegram import TelegramOutput
 
@@ -34,10 +36,20 @@ async def test_telegram_sends_conversational_plain_text_with_gmail_link() -> Non
             "Bạn có ưu đãi trả góp 0%. Xem ưu đãi (https://example.com/deal)\n\n"
             "----\n\n"
             "Từ: Techcombank\n"
-            "Email: offers@techcombank.com\n"
-            "Mở email: https://mail.google.com/mail/u/0/#inbox/thread-1"
+            "Email: offers@techcombank.com"
         ),
+        "reply_markup": {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "Mở email",
+                        "url": "https://mail.google.com/mail/u/0/#inbox/thread-1",
+                    }
+                ]
+            ]
+        },
     }
+    assert "mail.google.com" not in payload["text"]
     assert "subject" not in payload["text"].lower()
     assert "**" not in payload["text"]
 
@@ -55,6 +67,41 @@ async def test_telegram_keeps_footer_when_truncating_long_content() -> None:
 
     text = json.loads(route.calls.last.request.content)["text"]
     assert len(text) == 4096
-    assert text.endswith(
-        "Từ: alice@example.com\nMở email: https://mail.google.com/mail/u/0/#inbox/message-1"
+    assert text.endswith("Từ: alice@example.com")
+
+
+@respx.mock
+async def test_telegram_button_uses_message_id_when_thread_id_is_missing() -> None:
+    route = respx.post("https://api.telegram.org/bottest-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True})
     )
+    message = EmailMessage("message/id", "", "alice@example.com", "Hello", "Body")
+
+    async with httpx.AsyncClient() as client:
+        output = TelegramOutput("test-token", "123", client)
+        await output.send(message, "Summary")
+
+    payload = json.loads(route.calls.last.request.content)
+    button = payload["reply_markup"]["inline_keyboard"][0][0]
+    assert button == {
+        "text": "Mở email",
+        "url": "https://mail.google.com/mail/u/0/#inbox/message%2Fid",
+    }
+
+
+@respx.mock
+async def test_telegram_failure_does_not_expose_token_or_request_url() -> None:
+    token = "secret-telegram-token"
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    respx.post(url).mock(return_value=httpx.Response(401, json={"ok": False, "description": token}))
+    message = EmailMessage("message-1", "thread-1", "alice@example.com", "Hello", "Body")
+
+    async with httpx.AsyncClient() as client:
+        output = TelegramOutput(token, "123", client)
+        with pytest.raises(ProviderError) as exc_info:
+            await output.send(message, "Summary")
+
+    error = str(exc_info.value)
+    assert error == "Telegram send failed with HTTP 401"
+    assert token not in error
+    assert url not in error

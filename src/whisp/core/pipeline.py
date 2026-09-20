@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from whisp.core.errors import SafeWhispError, safe_error_message
 from whisp.core.models import PollResult
 from whisp.core.store import Store
 from whisp.inputs.base import BaseEmailInput, InputCursorExpired
@@ -31,66 +32,69 @@ class Pipeline:
 
     async def run_once(self, *, backfill: bool = False) -> PollResult:
         async with self._lock:
-            return await self._run_once(backfill=backfill)
+            run_id = self.store.start_run()
+            cursor = self.store.get("history_id")
+            try:
+                if cursor is None:
+                    next_cursor = await self.input.current_cursor()
+                    ids = await self.input.recent_message_ids(self.max_messages) if backfill else []
+                    initialized = True
+                else:
+                    try:
+                        ids, next_cursor = await self.input.changes(cursor)
+                    except InputCursorExpired:
+                        self.store.set("history_id", await self.input.current_cursor())
+                        logger.warning(
+                            "Input cursor expired; resumed from the provider's current state"
+                        )
+                        result = PollResult(initialized=True)
+                        self._finish(run_id, result)
+                        return result
+                    initialized = False
 
-    async def _run_once(self, *, backfill: bool) -> PollResult:
-        run_id = self.store.start_run()
-        cursor = self.store.get("history_id")
-        try:
-            if cursor is None:
-                next_cursor = await self.input.current_cursor()
-                ids = (
-                    await self.input.recent_message_ids(self.max_messages) if backfill else []
+                ids = ids[: self.max_messages]
+                discovered = len(ids)
+                notified = skipped = failed = 0
+                last_error: str | None = None
+                for message_id in reversed(ids) if backfill else ids:
+                    if self.store.is_processed(message_id):
+                        skipped += 1
+                        continue
+                    try:
+                        message = await self.input.fetch(message_id, max_chars=self.email_max_chars)
+                        processed_text = await self.processor.process(message)
+                        await self.output.send(message, processed_text)
+                        self.store.mark_processed(message)
+                        notified += 1
+                    except Exception as exc:
+                        failed += 1
+                        last_error = safe_error_message(exc)
+                        logger.error(
+                            "Failed to process input message %s: %s",
+                            message_id,
+                            safe_error_message(exc),
+                        )
+
+                result = PollResult(discovered, notified, skipped, failed, initialized)
+                if failed == 0:
+                    self.store.set("history_id", next_cursor)
+                self._finish(run_id, result, error=last_error)
+                return result
+            except Exception as exc:
+                error = safe_error_message(exc)
+                self.store.finish_run(
+                    run_id, discovered=0, notified=0, skipped=0, failed=1, error=error
                 )
-                initialized = True
-            else:
-                try:
-                    ids, next_cursor = await self.input.changes(cursor)
-                except InputCursorExpired:
-                    self.store.set("history_id", await self.input.current_cursor())
-                    logger.warning(
-                        "Input cursor expired; resumed from the provider's current state"
-                    )
-                    result = PollResult(initialized=True)
-                    self._finish(run_id, result)
-                    return result
-                initialized = False
+                if isinstance(exc, SafeWhispError):
+                    raise
+                raise SafeWhispError(error) from None
 
-            ids = ids[: self.max_messages]
-            discovered = len(ids)
-            notified = skipped = failed = 0
-            for message_id in reversed(ids) if backfill else ids:
-                if self.store.is_processed(message_id):
-                    skipped += 1
-                    continue
-                try:
-                    message = await self.input.fetch(
-                        message_id, max_chars=self.email_max_chars
-                    )
-                    processed_text = await self.processor.process(message)
-                    await self.output.send(message, processed_text)
-                    self.store.mark_processed(message)
-                    notified += 1
-                except Exception:
-                    failed += 1
-                    logger.exception("Failed to process input message %s", message_id)
-
-            result = PollResult(discovered, notified, skipped, failed, initialized)
-            if failed == 0:
-                self.store.set("history_id", next_cursor)
-            self._finish(run_id, result)
-            return result
-        except Exception as exc:
-            self.store.finish_run(
-                run_id, discovered=0, notified=0, skipped=0, failed=1, error=str(exc)
-            )
-            raise
-
-    def _finish(self, run_id: int, result: PollResult) -> None:
+    def _finish(self, run_id: int, result: PollResult, *, error: str | None = None) -> None:
         self.store.finish_run(
             run_id,
             discovered=result.discovered,
             notified=result.notified,
             skipped=result.skipped,
             failed=result.failed,
+            error=error,
         )

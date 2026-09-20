@@ -8,6 +8,10 @@ class InputCursorExpired(Exception):
 
 
 class BaseEmailInput(ABC):
+    async def check(self) -> None:
+        """Validate that the input provider can be reached."""
+        await self.current_cursor()
+
     @abstractmethod
     async def current_cursor(self) -> str:
         """Return the provider's current position."""

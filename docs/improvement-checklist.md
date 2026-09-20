@@ -57,11 +57,11 @@ Acceptance criteria:
 
 ### Sanitize provider failures
 
-- [ ] Wrap Telegram HTTP failures in a provider exception that does not contain the bot
+- [x] Wrap Telegram HTTP failures in a provider exception that does not contain the bot
   token or request URL.
-- [ ] Sanitize errors before writing them to logs or SQLite.
-- [ ] Review Gmail and OpenRouter error paths for credentials or sensitive payloads.
-- [ ] Add tests asserting that known secrets never appear in logged or stored errors.
+- [x] Sanitize errors before writing them to logs or SQLite.
+- [x] Review Gmail and OpenRouter error paths for credentials or sensitive payloads.
+- [x] Add tests asserting that known secrets never appear in logged or stored errors.
 
 Acceptance criteria:
 
@@ -89,13 +89,13 @@ Acceptance criteria:
 
 ### Health and operational status
 
-- [ ] Keep `/healthz` as a lightweight process health check.
-- [ ] Add `/readyz` for cached provider and runtime readiness.
-- [ ] Extend `/status` with last successful poll, duration, pending count, retry count,
+- [x] Keep `/healthz` as a lightweight process health check.
+- [x] Add `/readyz` for cached provider and runtime readiness.
+- [x] Extend `/status` with last successful poll, duration, pending count, retry count,
   dead-letter count, and last sanitized failure.
-- [ ] Track provider check timestamps rather than calling external providers from every
+- [x] Track provider check timestamps rather than calling external providers from every
   health request.
-- [ ] Add tests for health, readiness, and status responses.
+- [x] Add tests for health, readiness, and status responses.
 
 Acceptance criteria:
 
@@ -120,7 +120,7 @@ Acceptance criteria:
 
 ### Telegram presentation
 
-- [ ] Replace the raw Gmail URL with an inline "Open email" URL button if it can be
+- [x] Replace the raw Gmail URL with an inline "Open email" URL button if it can be
   implemented without enabling inbound bot interactions.
 - [ ] Represent priority consistently without excessive formatting.
 - [ ] Decide whether long responses should be truncated or split, then test the chosen
@@ -180,8 +180,8 @@ Acceptance criteria:
 - [ ] 1. Add the high-volume Gmail regression test.
 - [ ] 2. Implement the durable pending-message queue.
 - [ ] 3. Add retry, backoff, and dead-letter behavior.
-- [ ] 4. Sanitize provider errors and add secret-leak tests.
-- [ ] 5. Improve readiness and operational status.
+- [x] 4. Sanitize provider errors and add secret-leak tests.
+- [x] 5. Improve readiness and operational status.
 - [ ] 6. Introduce structured processing results.
 - [ ] 7. Improve MIME and HTML extraction.
 - [ ] 8. Add usage, migration, retention, and maintenance tooling.
