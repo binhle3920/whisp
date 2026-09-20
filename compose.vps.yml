@@ -1,0 +1,10 @@
+services:
+  whisp:
+    user: "${WHISP_UID:-1000}:${WHISP_GID:-1000}"
+    build:
+      context: .
+      # Some VPS Docker installations have broken bridge DNS even when host DNS works.
+      network: host
+    network_mode: host
+    ports: !reset []
+    command: ["whisp", "serve", "--host", "127.0.0.1", "--port", "8080"]

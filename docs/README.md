@@ -5,6 +5,7 @@ Use these guides to install Whisp, understand its layers, and configure each pro
 ## Start here
 
 - [Getting started](getting-started.md) — install, configure, test, and run Whisp.
+- [Deploy on a VPS](deploy-vps.md) — run Whisp continuously with Docker Compose.
 - [Architecture](architecture.md) — understand the input, processor, output, and core
   boundaries.
 - [Personalization](personalization.md) — configure language, personality, priorities,

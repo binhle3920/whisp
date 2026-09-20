@@ -26,6 +26,7 @@ server, or private host.
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
+- [Deploy on a VPS](docs/deploy-vps.md)
 - [Architecture](docs/architecture.md)
 - [Personalization](docs/personalization.md)
 - [Gmail input](docs/inputs/gmail.md)

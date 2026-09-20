@@ -32,6 +32,10 @@ async def lifespan(app: FastAPI):
         level=settings.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # Provider request URLs can contain credentials (notably Telegram bot tokens).
+    # Keep third-party transport logs out of normal application output.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     client = httpx.AsyncClient(timeout=30)
     app.state.settings = settings
     app.state.store = None
@@ -64,4 +68,3 @@ async def status(request: Request) -> dict[str, object]:
     if request.app.state.store is None:
         raise HTTPException(503, "Whisp is not configured")
     return request.app.state.store.status()
-
