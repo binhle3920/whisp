@@ -10,3 +10,4 @@ token.json
 credentials/*
 !credentials/README.md
 config/assistant.toml
+.DS_Store
