@@ -89,6 +89,18 @@ Start the API and background poller locally:
 uv run whisp serve
 ```
 
+Marketing email (Gmail's Promotions category, or mail the assistant judges to be
+marketing) is not notified immediately. It is held and sent as one digest at 23:00
+Vietnam time. These optional settings control the digest:
+
+```env
+WHISP_DIGEST_ENABLED=true
+WHISP_DIGEST_TIME=23:00
+WHISP_TIMEZONE=Asia/Ho_Chi_Minh
+```
+
+Run `uv run whisp digest` to send the pending digest immediately.
+
 Whisp checks Gmail every 60 seconds by default. The local operational endpoints are:
 
 - `GET http://localhost:8080/healthz`

@@ -61,15 +61,28 @@ provider for each layer, and injects those providers into the pipeline. `app.py`
 
 1. The input reports message IDs after its stored cursor.
 2. The core skips IDs already recorded in SQLite.
-3. The input converts each provider payload into a common `EmailMessage`.
-4. The processor transforms the message into a personalized briefing.
-5. The output formats and delivers the notification.
-6. The core records the message as processed and advances the cursor after a successful
+3. The input converts each provider payload into a common `EmailMessage`. If the
+   provider has its own categorization, the input maps it to an `EmailCategory`.
+4. Messages in the `PROMOTIONAL` category go straight to the digest queue without a processor call.
+5. Otherwise the processor returns a `ProcessedEmail`: a personalized briefing plus a
+   `marketing` flag judged from the content. Marketing messages are queued too.
+6. The output formats and delivers the notification for everything else.
+7. The core records the message as processed and advances the cursor after a successful
    batch.
 
 The delivery record is written after the output accepts the message. This gives Whisp
 at-least-once delivery: a crash at the delivery boundary may repeat one notification, but
 does not silently lose it.
+
+### Marketing digest
+
+Queued marketing messages are delivered once a day through
+`BaseNotificationOutput.send_digest` at `WHISP_DIGEST_TIME` (default `23:00`) in
+`WHISP_TIMEZONE` (default `Asia/Ho_Chi_Minh`). The last digest date is stored in SQLite,
+so a restart that spans the digest time still sends that day's digest, and never sends a
+second one. Queued items are marked sent only after the output accepts the digest. Set
+`WHISP_DIGEST_ENABLED=false` to notify marketing mail immediately, and use
+`whisp digest` to send the pending digest on demand.
 
 ## Adding a provider
 

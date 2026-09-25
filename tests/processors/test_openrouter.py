@@ -5,7 +5,7 @@ import pytest
 import respx
 
 from whisp.core.errors import ProviderError
-from whisp.core.models import EmailMessage
+from whisp.core.models import EmailMessage, ProcessedEmail
 from whisp.processors.openrouter import OpenRouterProcessor
 from whisp.processors.profile import AssistantProfile
 
@@ -16,7 +16,16 @@ async def test_openrouter_processor_sends_expected_request() -> None:
         return_value=httpx.Response(
             200,
             json={
-                "choices": [{"message": {"role": "assistant", "content": "Review it by Friday."}}]
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": json.dumps(
+                                {"marketing": False, "notification": "Review it by Friday."}
+                            ),
+                        }
+                    }
+                ]
             },
         )
     )
@@ -39,14 +48,15 @@ async def test_openrouter_processor_sends_expected_request() -> None:
                 priorities=["Project deadlines"],
             ),
         )
-        summary = await processor.process(message)
+        result = await processor.process(message)
 
-    assert summary == "Review it by Friday."
+    assert result == ProcessedEmail(text="Review it by Friday.", marketing=False)
     request = route.calls.last.request
     assert request.headers["Authorization"] == "Bearer test-key"
     assert request.headers["HTTP-Referer"] == "https://example.com/whisp"
     payload = json.loads(request.content)
     assert payload["model"] == "openai/gpt-5.4-nano"
+    assert payload["response_format"] == {"type": "json_object"}
     system_prompt = payload["messages"][0]["content"]
     assert "Direct and pragmatic." in system_prompt
     assert "Vietnamese" in system_prompt
@@ -101,3 +111,50 @@ async def test_openrouter_failure_does_not_expose_api_key_or_email_body() -> Non
     assert error == "OpenRouter request failed with HTTP 401"
     assert api_key not in error
     assert email_body not in error
+
+
+def completion(content: str) -> httpx.Response:
+    return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (
+            json.dumps({"marketing": True, "notification": "Shopee is having a sale."}),
+            ProcessedEmail(text="Shopee is having a sale.", marketing=True),
+        ),
+        # A model that ignores the JSON contract must not delay real mail.
+        ("Plain text reply.", ProcessedEmail(text="Plain text reply.", marketing=False)),
+        (
+            json.dumps({"marketing": "yes", "notification": "Ambiguous flag."}),
+            ProcessedEmail(text="Ambiguous flag.", marketing=False),
+        ),
+        ('{"marketing": true}', ProcessedEmail(text='{"marketing": true}', marketing=False)),
+    ],
+)
+@respx.mock
+async def test_openrouter_parses_marketing_classification(
+    content: str, expected: ProcessedEmail
+) -> None:
+    respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        return_value=completion(content)
+    )
+    message = EmailMessage("m1", "t1", "deals@shop.com", "Sale", "Big sale")
+
+    async with httpx.AsyncClient() as client:
+        processor = OpenRouterProcessor(api_key="k", model="test-model", client=client)
+        assert await processor.process(message) == expected
+
+
+@respx.mock
+async def test_openrouter_rejects_empty_notification() -> None:
+    respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        return_value=completion(json.dumps({"marketing": False, "notification": "  "}))
+    )
+    message = EmailMessage("m1", "t1", "alice@example.com", "Hi", "Body")
+
+    async with httpx.AsyncClient() as client:
+        processor = OpenRouterProcessor(api_key="k", model="test-model", client=client)
+        with pytest.raises(ProviderError):
+            await processor.process(message)

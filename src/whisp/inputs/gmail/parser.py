@@ -3,7 +3,13 @@ import re
 from html import unescape
 from typing import Any
 
-from whisp.core.models import EmailMessage
+from whisp.core.models import EmailCategory, EmailMessage
+
+# Gmail inbox-tab labels mapped to core categories. Tabs without a mapping stay
+# uncategorized and are left to the processor.
+CATEGORY_LABELS = {
+    "CATEGORY_PROMOTIONS": EmailCategory.PROMOTIONAL,
+}
 
 
 def _decode(data: str) -> str:
@@ -35,6 +41,10 @@ def _find_bodies(part: dict[str, Any]) -> tuple[list[str], list[str]]:
     return plain, html
 
 
+def _category(labels: list[str]) -> EmailCategory | None:
+    return next((CATEGORY_LABELS[label] for label in labels if label in CATEGORY_LABELS), None)
+
+
 def parse_message(payload: dict[str, Any], *, max_chars: int) -> EmailMessage:
     headers = {
         item.get("name", "").lower(): item.get("value", "")
@@ -55,4 +65,5 @@ def parse_message(payload: dict[str, Any], *, max_chars: int) -> EmailMessage:
         subject=headers.get("subject", "(no subject)"),
         body=body or "(empty message)",
         internal_date=payload.get("internalDate"),
+        category=_category(payload.get("labelIds", [])),
     )

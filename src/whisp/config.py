@@ -1,7 +1,9 @@
+from datetime import time
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +29,37 @@ class Settings(BaseSettings):
     poller_enabled: bool = True
     readiness_check_interval_seconds: int = Field(default=300, ge=30)
     log_level: str = "INFO"
+
+    # Marketing mail is held and delivered once a day at digest_time in this timezone.
+    digest_enabled: bool = True
+    digest_time: str = "23:00"
+    timezone: str = "Asia/Ho_Chi_Minh"
+
+    @field_validator("digest_time")
+    @classmethod
+    def _validate_digest_time(cls, value: str) -> str:
+        try:
+            parsed = time.fromisoformat(value)
+        except ValueError:
+            raise ValueError("digest_time must be HH:MM") from None
+        return parsed.strftime("%H:%M")
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError(f"Unknown timezone: {value}") from None
+        return value
+
+    @property
+    def digest_at(self) -> time:
+        return time.fromisoformat(self.digest_time)
+
+    @property
+    def zone(self) -> ZoneInfo:
+        return ZoneInfo(self.timezone)
 
     @property
     def google_credentials_path(self) -> Path:

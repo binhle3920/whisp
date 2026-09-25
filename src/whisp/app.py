@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -27,6 +28,31 @@ async def _poll_forever(app: FastAPI) -> None:
         except Exception:
             logger.exception("Poll failed; retrying on the next interval")
         await asyncio.sleep(settings.poll_interval_seconds)
+
+
+async def _send_digest_if_due(app: FastAPI, now: datetime) -> None:
+    settings = app.state.settings
+    store = app.state.pipeline.store
+    today = now.date().isoformat()
+    # Compare against a persisted date rather than sleeping until the exact minute, so a
+    # restart spanning digest_time still sends that day's digest, and never sends twice.
+    if now.time() < settings.digest_at or store.get("last_digest_date") == today:
+        return
+    sent = await app.state.pipeline.send_digest()
+    store.set("last_digest_date", today)
+    logger.info("Digest sent with %d messages", sent)
+
+
+async def _digest_forever(app: FastAPI) -> None:
+    settings = app.state.settings
+    while True:
+        try:
+            await _send_digest_if_due(app, datetime.now(settings.zone))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("Digest failed; retrying shortly: %s", safe_error_message(exc))
+        await asyncio.sleep(60)
 
 
 async def _check_readiness_forever(app: FastAPI) -> None:
@@ -58,6 +84,8 @@ async def lifespan(app: FastAPI):
         tasks.append(asyncio.create_task(_check_readiness_forever(app)))
         if settings.poller_enabled:
             tasks.append(asyncio.create_task(_poll_forever(app)))
+        if settings.digest_enabled:
+            tasks.append(asyncio.create_task(_digest_forever(app)))
         yield
     finally:
         for task in tasks:

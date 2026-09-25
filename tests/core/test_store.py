@@ -39,3 +39,20 @@ def test_status_reports_run_timing_success_and_sanitized_failure(tmp_path) -> No
         "failed": 1,
         "error": "Telegram send failed with HTTP 503",
     }
+
+
+def test_digest_queue_round_trip(tmp_path) -> None:
+    store = Store(tmp_path / "whisp.db")
+    message = EmailMessage("m1", "t1", "Shop <deals@shop.com>", "Sale", "Body")
+
+    store.queue_digest(message, summary="50% off")
+    store.queue_digest(message, summary="50% off")
+
+    assert store.is_processed("m1")
+    assert [(item.message_id, item.summary) for item in store.pending_digest()] == [
+        ("m1", "50% off")
+    ]
+    assert store.status()["digest_pending"] == 1
+    store.mark_digest_sent(["m1"])
+    assert store.pending_digest() == []
+    assert store.status()["digest_pending"] == 0

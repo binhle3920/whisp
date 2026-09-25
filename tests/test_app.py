@@ -1,7 +1,8 @@
 import json
+from datetime import datetime, time
 from types import SimpleNamespace
 
-from whisp.app import health, readiness, status
+from whisp.app import _send_digest_if_due, health, readiness, status
 from whisp.core.store import Store
 
 
@@ -67,3 +68,30 @@ async def test_status_combines_store_and_cached_readiness(tmp_path) -> None:
         "dead_letter": 0,
     }
     assert result["readiness"]["ready"] is True
+
+
+class CountingPipeline:
+    def __init__(self, store: Store) -> None:
+        self.store = store
+        self.digests = 0
+
+    async def send_digest(self) -> int:
+        self.digests += 1
+        return 0
+
+
+async def test_digest_is_sent_once_per_day_after_digest_time(tmp_path) -> None:
+    pipeline = CountingPipeline(Store(tmp_path / "whisp.db"))
+    app = SimpleNamespace(
+        state=SimpleNamespace(settings=SimpleNamespace(digest_at=time(23, 0)), pipeline=pipeline)
+    )
+
+    await _send_digest_if_due(app, datetime(2026, 9, 25, 22, 59))  # type: ignore[arg-type]
+    assert pipeline.digests == 0
+
+    await _send_digest_if_due(app, datetime(2026, 9, 25, 23, 0))  # type: ignore[arg-type]
+    await _send_digest_if_due(app, datetime(2026, 9, 25, 23, 30))  # type: ignore[arg-type]
+    assert pipeline.digests == 1
+
+    await _send_digest_if_due(app, datetime(2026, 9, 26, 23, 5))  # type: ignore[arg-type]
+    assert pipeline.digests == 2

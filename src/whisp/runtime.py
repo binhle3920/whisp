@@ -31,4 +31,5 @@ def build_pipeline(settings: Settings, client: httpx.AsyncClient) -> Pipeline:
         ),
         max_messages=settings.max_messages_per_run,
         email_max_chars=settings.email_max_chars,
+        digest_enabled=settings.digest_enabled,
     )

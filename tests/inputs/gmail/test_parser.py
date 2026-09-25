@@ -1,5 +1,6 @@
 import base64
 
+from whisp.core.models import EmailCategory
 from whisp.inputs.gmail.parser import parse_message
 
 
@@ -47,3 +48,13 @@ def test_falls_back_to_html() -> None:
     message = parse_message(raw, max_chars=1000)
     assert "Hello & welcome" in message.body
     assert "Second line" in message.body
+
+
+def test_promotions_tab_maps_to_promotional_category() -> None:
+    raw = {"id": "m3", "labelIds": ["INBOX", "CATEGORY_PROMOTIONS"], "payload": {"headers": []}}
+    assert parse_message(raw, max_chars=1000).category is EmailCategory.PROMOTIONAL
+
+
+def test_unmapped_tabs_are_uncategorized() -> None:
+    raw = {"id": "m4", "labelIds": ["INBOX", "CATEGORY_UPDATES"], "payload": {"headers": []}}
+    assert parse_message(raw, max_chars=1000).category is None

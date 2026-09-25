@@ -1,10 +1,11 @@
 import asyncio
+import json
 from typing import Any
 
 import httpx
 
 from whisp.core.errors import ProviderError
-from whisp.core.models import EmailMessage
+from whisp.core.models import EmailMessage, ProcessedEmail
 from whisp.processors.base import BaseEmailProcessor
 from whisp.processors.profile import AssistantProfile
 
@@ -29,7 +30,7 @@ class OpenRouterProcessor(BaseEmailProcessor):
         self.app_title = app_title
         self.profile = profile or AssistantProfile()
 
-    async def process(self, message: EmailMessage) -> str:
+    async def process(self, message: EmailMessage) -> ProcessedEmail:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "X-OpenRouter-Title": self.app_title,
@@ -59,6 +60,7 @@ class OpenRouterProcessor(BaseEmailProcessor):
                             },
                         ],
                         "max_tokens": 400,
+                        "response_format": {"type": "json_object"},
                     },
                 )
             except httpx.HTTPError:
@@ -83,7 +85,22 @@ class OpenRouterProcessor(BaseEmailProcessor):
             raise ProviderError("OpenRouter", "response validation") from None
         if not isinstance(content, str):
             raise ProviderError("OpenRouter", "response validation")
-        summary = content.strip()
-        if not summary:
+        result = _parse_result(content.strip())
+        if not result.text:
             raise ProviderError("OpenRouter", "response validation")
-        return summary
+        return result
+
+
+def _parse_result(content: str) -> ProcessedEmail:
+    # Fail open: if the model ignores the JSON contract, deliver its text immediately
+    # rather than holding it for the digest. A formatting slip must never delay real mail.
+    try:
+        data = json.loads(content)
+    except ValueError:
+        return ProcessedEmail(text=content)
+    if not isinstance(data, dict):
+        return ProcessedEmail(text=content)
+    notification = data.get("notification")
+    if not isinstance(notification, str):
+        return ProcessedEmail(text=content)
+    return ProcessedEmail(text=notification.strip(), marketing=data.get("marketing") is True)

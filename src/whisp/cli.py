@@ -37,6 +37,15 @@ async def _poll(backfill: bool) -> None:
     print(json.dumps(result.__dict__, indent=2))
 
 
+async def _digest() -> None:
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    async with httpx.AsyncClient(timeout=30) as client:
+        pipeline = build_pipeline(settings, client)
+        sent = await pipeline.send_digest()
+    print(json.dumps({"sent": sent}, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="whisp")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -45,6 +54,7 @@ def main() -> None:
     poll.add_argument(
         "--backfill", action="store_true", help="Summarize recent inbox mail on first run"
     )
+    subparsers.add_parser("digest", help="Send held marketing emails now")
     subparsers.add_parser("status", help="Show local Whisp state")
     serve = subparsers.add_parser("serve", help="Run the API and background poller")
     serve.add_argument("--host", default="0.0.0.0")
@@ -55,6 +65,8 @@ def main() -> None:
         _authorize()
     elif args.command == "poll":
         asyncio.run(_poll(args.backfill))
+    elif args.command == "digest":
+        asyncio.run(_digest())
     elif args.command == "status":
         print(json.dumps(Store(get_settings().db_path).status(), indent=2))
     elif args.command == "serve":

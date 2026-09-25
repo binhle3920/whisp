@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from whisp.core.models import EmailMessage
+from whisp.core.models import DigestItem, EmailMessage
 
 
 class Store:
@@ -49,6 +49,15 @@ class Store:
                     failed INTEGER NOT NULL DEFAULT 0,
                     error TEXT
                 );
+                CREATE TABLE IF NOT EXISTS digest_queue (
+                    message_id TEXT PRIMARY KEY,
+                    thread_id TEXT NOT NULL,
+                    sender TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    summary TEXT,
+                    queued_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    sent_at TEXT
+                );
                 """
             )
 
@@ -82,6 +91,52 @@ class Store:
                 VALUES (?, ?, ?)
                 """,
                 (message.id, message.subject, message.sender),
+            )
+
+    def queue_digest(self, message: EmailMessage, *, summary: str | None) -> None:
+        # Queuing counts as processing: one transaction so a held message is never
+        # re-fetched by a later run, nor recorded as processed without being queued.
+        with self._connect() as db:
+            db.execute(
+                """
+                INSERT OR IGNORE INTO digest_queue(message_id, thread_id, sender, subject, summary)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (message.id, message.thread_id, message.sender, message.subject, summary),
+            )
+            db.execute(
+                """
+                INSERT OR IGNORE INTO processed_messages(message_id, subject, sender)
+                VALUES (?, ?, ?)
+                """,
+                (message.id, message.subject, message.sender),
+            )
+
+    def pending_digest(self) -> list[DigestItem]:
+        with self._connect() as db:
+            rows = db.execute(
+                """
+                SELECT message_id, thread_id, sender, subject, summary FROM digest_queue
+                WHERE sent_at IS NULL ORDER BY queued_at, rowid
+                """
+            ).fetchall()
+        return [
+            DigestItem(
+                message_id=row["message_id"],
+                thread_id=row["thread_id"],
+                sender=row["sender"],
+                subject=row["subject"],
+                summary=row["summary"],
+            )
+            for row in rows
+        ]
+
+    def mark_digest_sent(self, message_ids: list[str]) -> None:
+        sent_at = datetime.now(UTC).isoformat()
+        with self._connect() as db:
+            db.executemany(
+                "UPDATE digest_queue SET sent_at = ? WHERE message_id = ?",
+                [(sent_at, message_id) for message_id in message_ids],
             )
 
     def start_run(self) -> int:
@@ -144,9 +199,13 @@ class Store:
             ).fetchone()
             count = db.execute("SELECT COUNT(*) AS count FROM processed_messages").fetchone()
             cursor = db.execute("SELECT value FROM kv WHERE key = 'history_id'").fetchone()
+            digest = db.execute(
+                "SELECT COUNT(*) AS count FROM digest_queue WHERE sent_at IS NULL"
+            ).fetchone()
         return {
             "history_id": str(cursor["value"]) if cursor else None,
             "processed_messages": int(count["count"]),
+            "digest_pending": int(digest["count"]),
             "last_run": dict(run) if run else None,
             "last_successful_poll_at": last_success["finished_at"] if last_success else None,
             "last_failure": dict(last_failure) if last_failure else None,

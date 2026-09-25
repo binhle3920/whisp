@@ -5,8 +5,11 @@ from urllib.parse import quote
 import httpx
 
 from whisp.core.errors import ProviderError
-from whisp.core.models import EmailMessage
+from whisp.core.models import DigestItem, EmailMessage
 from whisp.outputs.base import BaseNotificationOutput
+
+MESSAGE_LIMIT = 4096
+SUBJECT_LIMIT = 200
 
 
 class TelegramOutput(BaseNotificationOutput):
@@ -32,7 +35,7 @@ class TelegramOutput(BaseNotificationOutput):
 
         content = _plain_text(processed_text)
         divider = "----"
-        content_limit = 4096 - len(sender_details) - len(divider) - 4
+        content_limit = MESSAGE_LIMIT - len(sender_details) - len(divider) - 4
         if len(content) > content_limit:
             content = content[: content_limit - 3].rstrip() + "..."
         text = f"{content}\n\n{divider}\n\n{sender_details}"
@@ -46,6 +49,17 @@ class TelegramOutput(BaseNotificationOutput):
                 "reply_markup": {"inline_keyboard": [[{"text": "Mở email", "url": gmail_url}]]},
             },
         )
+
+    async def send_digest(self, items: list[DigestItem]) -> None:
+        header = f"📬 Email quảng cáo hôm nay ({len(items)})"
+        entries = [_digest_entry(index, item) for index, item in enumerate(items, start=1)]
+        for text in _chunk([header, *entries]):
+            await self._request(
+                "digest",
+                self.client.post,
+                self.url,
+                json={"chat_id": self.chat_id, "text": text},
+            )
 
     async def _request(self, operation: str, request, url: str, **kwargs):
         try:
@@ -63,6 +77,32 @@ class TelegramOutput(BaseNotificationOutput):
         if not isinstance(data, dict) or not data.get("ok"):
             raise ProviderError("Telegram", operation)
         return data
+
+
+def _digest_entry(index: int, item: DigestItem) -> str:
+    sender_name, sender_address = parseaddr(item.sender)
+    sender = re.sub(r"\s+", " ", sender_name or sender_address or item.sender).strip()[:120]
+    subject = re.sub(r"\s+", " ", item.subject).strip()[:SUBJECT_LIMIT]
+    entry = f"{index}. {sender} — {subject}"
+    if item.summary:
+        entry += f"\n   {_plain_text(item.summary)}"
+    return entry[:MESSAGE_LIMIT]
+
+
+def _chunk(blocks: list[str]) -> list[str]:
+    """Pack blocks into as few messages as fit Telegram's limit, splitting only between blocks."""
+    chunks: list[str] = []
+    current = ""
+    for block in blocks:
+        candidate = f"{current}\n\n{block}" if current else block
+        if len(candidate) > MESSAGE_LIMIT and current:
+            chunks.append(current)
+            current = block
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
 
 
 def _plain_text(value: str) -> str:

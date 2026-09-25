@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from whisp.core.errors import SafeWhispError, safe_error_message
-from whisp.core.models import PollResult
+from whisp.core.models import EmailCategory, PollResult
 from whisp.core.store import Store
 from whisp.inputs.base import BaseEmailInput, InputCursorExpired
 from whisp.outputs.base import BaseNotificationOutput
@@ -21,6 +21,7 @@ class Pipeline:
         output: BaseNotificationOutput,
         max_messages: int,
         email_max_chars: int,
+        digest_enabled: bool = True,
     ) -> None:
         self.store = store
         self.input = input_source
@@ -28,6 +29,7 @@ class Pipeline:
         self.output = output
         self.max_messages = max_messages
         self.email_max_chars = email_max_chars
+        self.digest_enabled = digest_enabled
         self._lock = asyncio.Lock()
 
     async def run_once(self, *, backfill: bool = False) -> PollResult:
@@ -74,13 +76,23 @@ class Pipeline:
                         len(outstanding),
                         pending,
                     )
-                notified = failed = 0
+                notified = failed = queued = 0
                 last_error: str | None = None
                 for message_id in reversed(outstanding) if backfill else outstanding:
                     try:
                         message = await self.input.fetch(message_id, max_chars=self.email_max_chars)
-                        processed_text = await self.processor.process(message)
-                        await self.output.send(message, processed_text)
+                        # The input's own categorization is trusted first so obvious
+                        # promotions skip the processor call entirely.
+                        if self.digest_enabled and message.category is EmailCategory.PROMOTIONAL:
+                            self.store.queue_digest(message, summary=None)
+                            queued += 1
+                            continue
+                        processed = await self.processor.process(message)
+                        if self.digest_enabled and processed.marketing:
+                            self.store.queue_digest(message, summary=processed.text)
+                            queued += 1
+                            continue
+                        await self.output.send(message, processed.text)
                         self.store.mark_processed(message)
                         notified += 1
                     except Exception as exc:
@@ -92,7 +104,9 @@ class Pipeline:
                             safe_error_message(exc),
                         )
 
-                result = PollResult(discovered, notified, skipped, failed, initialized, pending)
+                result = PollResult(
+                    discovered, notified, skipped, failed, initialized, pending, queued
+                )
                 # Only advance once the whole range is accounted for: any failure or
                 # any deferred message means next_cursor covers unprocessed mail.
                 if failed == 0 and pending == 0:
@@ -107,6 +121,23 @@ class Pipeline:
                 if isinstance(exc, SafeWhispError):
                     raise
                 raise SafeWhispError(error) from None
+
+    async def send_digest(self) -> int:
+        """Deliver every held marketing message as one digest; return how many were sent."""
+        async with self._lock:
+            try:
+                items = self.store.pending_digest()
+                if not items:
+                    return 0
+                await self.output.send_digest(items)
+                # Marked only after the output accepts the digest: a crash in between
+                # repeats the digest rather than losing it, matching single notifications.
+                self.store.mark_digest_sent([item.message_id for item in items])
+                return len(items)
+            except Exception as exc:
+                if isinstance(exc, SafeWhispError):
+                    raise
+                raise SafeWhispError(safe_error_message(exc)) from None
 
     def _finish(self, run_id: int, result: PollResult, *, error: str | None = None) -> None:
         self.store.finish_run(
