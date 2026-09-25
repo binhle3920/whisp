@@ -124,6 +124,7 @@ async def status(request: Request) -> dict[str, object]:
     if request.app.state.store is None:
         raise HTTPException(503, "Whisp is not configured")
     result = request.app.state.store.status()
+    result["git_commit"] = request.app.state.settings.git_commit
     monitor = request.app.state.readiness
     result["readiness"] = monitor.snapshot() if monitor is not None else None
     return result

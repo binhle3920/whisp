@@ -57,9 +57,14 @@ async def test_status_combines_store_and_cached_readiness(tmp_path) -> None:
     monitor = StubReadiness(ready=True)
 
     result = await status(  # type: ignore[arg-type]
-        request_with_state(store=store, readiness=monitor)
+        request_with_state(
+            store=store,
+            readiness=monitor,
+            settings=SimpleNamespace(git_commit="0c181f2abc"),
+        )
     )
 
+    assert result["git_commit"] == "0c181f2abc"
     assert result["processed_messages"] == 0
     assert result["queue"] == {
         "available": False,

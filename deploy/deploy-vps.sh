@@ -29,6 +29,8 @@ done
 
 echo "==> Building and starting containers"
 export WHISP_UID="$(id -u)" WHISP_GID="$(id -g)"
+# Baked into the image so /status reports exactly which commit is running.
+export WHISP_GIT_COMMIT="$(git rev-parse HEAD)"
 docker compose -f docker-compose.yml -f compose.vps.yml up -d --build --remove-orphans
 
 echo "==> Waiting for health"

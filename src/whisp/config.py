@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     poller_enabled: bool = True
     readiness_check_interval_seconds: int = Field(default=300, ge=30)
     log_level: str = "INFO"
+    # Set at image build time by the deploy script; None when running from a checkout.
+    git_commit: str | None = None
 
     # Marketing mail is held and delivered once a day at digest_time in this timezone.
     digest_enabled: bool = True

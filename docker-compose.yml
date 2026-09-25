@@ -1,6 +1,9 @@
 services:
   whisp:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${WHISP_GIT_COMMIT:-unknown}
     init: true
     restart: unless-stopped
     env_file: .env

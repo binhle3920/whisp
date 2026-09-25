@@ -67,7 +67,9 @@ tunnel:
 ssh -L 8080:127.0.0.1:8080 your-vps
 ```
 
-Then visit `http://127.0.0.1:8080/status` locally.
+Then visit `http://127.0.0.1:8080/status` locally. Its `git_commit` field shows the
+commit the running container was built from; it is `unknown` for images built without
+the deploy script.
 
 ### Public IP health check
 
