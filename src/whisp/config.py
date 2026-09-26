@@ -9,7 +9,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="WHISP_", env_file=".env", extra="ignore", case_sensitive=False
+        env_prefix="WHISP_",
+        env_file=".env",
+        extra="ignore",
+        case_sensitive=False,
+        # Validation errors would otherwise echo raw input, including secrets from .env.
+        hide_input_in_errors=True,
     )
 
     openrouter_api_key: SecretStr | None = None
@@ -36,6 +41,19 @@ class Settings(BaseSettings):
     digest_enabled: bool = True
     digest_time: str = "23:00"
     timezone: str = "Asia/Ho_Chi_Minh"
+
+    # HTTP Basic login for /dashboard. The dashboard stays disabled until both are set.
+    dashboard_username: str | None = None
+    dashboard_password: SecretStr | None = None
+
+    @field_validator("dashboard_password")
+    @classmethod
+    def _validate_dashboard_password(cls, value: SecretStr | None) -> SecretStr | None:
+        # The dashboard can be published on the internet, where short passwords are
+        # brute-forceable.
+        if value is not None and len(value.get_secret_value()) < 12:
+            raise ValueError("dashboard_password must be at least 12 characters")
+        return value
 
     @field_validator("digest_time")
     @classmethod

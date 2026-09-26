@@ -15,4 +15,4 @@ ln -sfn "/etc/nginx/sites-available/$site_name" "/etc/nginx/sites-enabled/$site_
 nginx -t
 systemctl reload nginx
 
-echo "Published http://159.198.66.238/healthz"
+echo "Published http://159.198.66.238/healthz and http://159.198.66.238/dashboard"

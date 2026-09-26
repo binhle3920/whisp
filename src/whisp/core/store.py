@@ -173,6 +173,37 @@ class Store:
                 ),
             )
 
+    def recent_messages(self, limit: int) -> list[dict[str, object]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """
+                SELECT p.message_id, p.subject, p.sender, p.processed_at,
+                    d.message_id IS NOT NULL AS in_digest, d.sent_at AS digest_sent_at
+                FROM processed_messages p
+                LEFT JOIN digest_queue d ON d.message_id = p.message_id
+                ORDER BY p.processed_at DESC, p.rowid DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def recent_activity(self, limit: int) -> list[dict[str, object]]:
+        # The poller records a run every interval; runs that found nothing and failed
+        # nothing are noise, so only runs with work or errors are returned.
+        with self._connect() as db:
+            rows = db.execute(
+                """
+                SELECT *, CASE WHEN finished_at IS NULL THEN NULL ELSE
+                    CAST((julianday(finished_at) - julianday(started_at)) * 86400000 AS INTEGER)
+                    END AS duration_ms
+                FROM runs
+                WHERE discovered > 0 OR failed > 0 OR error IS NOT NULL
+                ORDER BY id DESC LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def status(self) -> dict[str, object]:
         with self._connect() as db:
             run = db.execute(

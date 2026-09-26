@@ -1,3 +1,7 @@
+# Throttle dashboard requests per client IP so its password cannot be brute-forced
+# quickly. Declared here because site files are included inside nginx's http block.
+limit_req_zone $binary_remote_addr zone=whisp_dashboard:1m rate=30r/m;
+
 server {
     listen 80;
     listen [::]:80;
@@ -8,6 +12,16 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         access_log off;
+    }
+
+    # Protected by HTTP Basic login inside Whisp (WHISP_DASHBOARD_USERNAME/PASSWORD).
+    location = /dashboard {
+        limit_req zone=whisp_dashboard burst=10 nodelay;
+        limit_req_status 429;
+        proxy_pass http://127.0.0.1:8080/dashboard;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        add_header X-Robots-Tag "noindex, nofollow" always;
     }
 
     location / {

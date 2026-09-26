@@ -39,3 +39,10 @@ def test_digest_defaults_to_11pm_vietnam_time() -> None:
 def test_invalid_digest_schedule_is_rejected(overrides: dict[str, str]) -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **overrides)
+
+
+def test_short_dashboard_password_is_rejected_without_echoing_it() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None, dashboard_password="short-pw")
+
+    assert "short-pw" not in str(exc_info.value)

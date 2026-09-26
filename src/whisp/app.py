@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from whisp.config import get_settings
 from whisp.core.errors import safe_error_message
 from whisp.core.readiness import ReadinessMonitor
+from whisp.dashboard import router as dashboard_router
 from whisp.logging_config import configure_logging
 from whisp.runtime import build_pipeline
 
@@ -97,6 +98,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Whisp", version="0.1.0", lifespan=lifespan)
+app.include_router(dashboard_router)
 
 
 @app.get("/healthz")

@@ -67,21 +67,28 @@ tunnel:
 ssh -L 8080:127.0.0.1:8080 your-vps
 ```
 
-Then visit `http://127.0.0.1:8080/status` locally. Its `git_commit` field shows the
-commit the running container was built from; it is `unknown` for images built without
-the deploy script.
+Then visit `http://127.0.0.1:8080/dashboard` locally for a readable overview of health,
+recent email and poll activity (it asks for the dashboard login), or
+`http://127.0.0.1:8080/status` for the raw JSON. The `git_commit` field shows the commit
+the running container was built from; it is `unknown` for images built without the
+deploy script.
 
 ### Public IP health check
 
-To publish only `/healthz` through the VPS Nginx server while keeping `/status`
-private, run:
+To publish `/healthz` and the password-protected `/dashboard` through the VPS Nginx
+server while keeping `/status` private, first set `WHISP_DASHBOARD_USERNAME` and
+`WHISP_DASHBOARD_PASSWORD` in `.env` and redeploy, then run:
 
 ```bash
 sudo ./deploy/install-public-health.sh
 ```
 
-The public endpoint is `http://159.198.66.238/healthz`. Whisp remains bound to
-`127.0.0.1:8080`; Nginx returns `404` for every other path in this IP-based server.
+The public endpoints are `http://159.198.66.238/healthz` and
+`http://159.198.66.238/dashboard`. Whisp remains bound to `127.0.0.1:8080`; Nginx
+rate-limits dashboard requests and returns `404` for every other path.
+
+Over plain HTTP the dashboard login travels unencrypted. Serve it over HTTPS before
+relying on it from untrusted networks.
 
 ## Update
 
