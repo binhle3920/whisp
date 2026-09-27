@@ -28,7 +28,7 @@ class ReadinessMonitor:
                 self._run_check("input", self.pipeline.input.check, checked_at),
                 self._run_check("output", self.pipeline.output.check, checked_at),
             )
-            check_map = {name: result for name, result in checks}
+            check_map = dict(checks)
             self._snapshot = {
                 "ready": all(bool(result["ok"]) for result in check_map.values()),
                 "checked_at": checked_at,

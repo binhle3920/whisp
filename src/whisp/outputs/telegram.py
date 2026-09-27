@@ -1,11 +1,13 @@
 import re
 from email.utils import parseaddr
+from typing import Any
 from urllib.parse import quote
 
 import httpx
 
 from whisp.core.errors import ProviderError
 from whisp.core.models import DigestItem, EmailMessage
+from whisp.http import request_json
 from whisp.outputs.base import BaseNotificationOutput
 
 MESSAGE_LIMIT = 4096
@@ -13,24 +15,22 @@ SUBJECT_LIMIT = 200
 
 
 class TelegramOutput(BaseNotificationOutput):
-    def __init__(self, token: str, chat_id: str, client: httpx.AsyncClient) -> None:
+    def __init__(self, *, token: str, chat_id: str, client: httpx.AsyncClient) -> None:
         self.api = f"https://api.telegram.org/bot{token}"
-        self.url = f"{self.api}/sendMessage"
         self.chat_id = chat_id
         self.client = client
 
     async def check(self) -> None:
-        await self._request("check", self.client.get, f"{self.api}/getMe")
+        await self._request("check", "GET", "getMe")
 
     async def send(self, message: EmailMessage, processed_text: str) -> str | None:
         sender_name, sender_address = parseaddr(message.sender)
-        sender_name = re.sub(r"\s+", " ", sender_name).strip()[:120]
-        sender_address = re.sub(r"\s+", " ", sender_address).strip()[:254]
+        sender_name = _one_line(sender_name, 120)
+        sender_address = _one_line(sender_address, 254)
         if sender_name and sender_address:
             sender_details = f"Từ: {sender_name}\nEmail: {sender_address}"
         else:
-            sender = sender_address or re.sub(r"\s+", " ", message.sender).strip()[:254]
-            sender_details = f"Từ: {sender}"
+            sender_details = f"Từ: {sender_address or _one_line(message.sender, 254)}"
         gmail_id = quote(message.thread_id or message.id, safe="")
         gmail_url = f"https://mail.google.com/mail/u/0/#inbox/{gmail_id}"
 
@@ -42,8 +42,8 @@ class TelegramOutput(BaseNotificationOutput):
         text = f"{content}\n\n{divider}\n\n{sender_details}"
         data = await self._request(
             "send",
-            self.client.post,
-            self.url,
+            "POST",
+            "sendMessage",
             json={
                 "chat_id": self.chat_id,
                 "text": text,
@@ -61,21 +61,18 @@ class TelegramOutput(BaseNotificationOutput):
                     "message_id": int(reply_to),
                     "allow_sending_without_reply": True,
                 }
-            await self._request("reply", self.client.post, self.url, json=payload)
+            await self._request("reply", "POST", "sendMessage", json=payload)
 
     async def send_typing(self, chat_id: str) -> None:
         await self._request(
-            "typing",
-            self.client.post,
-            f"{self.api}/sendChatAction",
-            json={"chat_id": chat_id, "action": "typing"},
+            "typing", "POST", "sendChatAction", json={"chat_id": chat_id, "action": "typing"}
         )
 
     async def set_webhook(self, url: str, secret: str) -> None:
         await self._request(
             "webhook registration",
-            self.client.post,
-            f"{self.api}/setWebhook",
+            "POST",
+            "setWebhook",
             json={"url": url, "secret_token": secret, "allowed_updates": ["message"]},
         )
 
@@ -84,41 +81,40 @@ class TelegramOutput(BaseNotificationOutput):
         entries = [_digest_entry(index, item) for index, item in enumerate(items, start=1)]
         for text in _chunk([header, *entries]):
             await self._request(
-                "digest",
-                self.client.post,
-                self.url,
-                json={"chat_id": self.chat_id, "text": text},
+                "digest", "POST", "sendMessage", json={"chat_id": self.chat_id, "text": text}
             )
 
-    async def _request(self, operation: str, request, url: str, **kwargs):
-        try:
-            response = await request(url, **kwargs)
-        except httpx.HTTPError:
-            raise ProviderError("Telegram", operation) from None
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError:
-            raise ProviderError("Telegram", operation, status_code=response.status_code) from None
-        try:
-            data = response.json()
-        except ValueError:
-            raise ProviderError("Telegram", f"{operation} response decoding") from None
-        if not isinstance(data, dict) or not data.get("ok"):
+    async def _request(
+        self, operation: str, method: str, api_method: str, **kwargs: Any
+    ) -> dict[str, Any]:
+        data = await request_json(
+            self.client,
+            method,
+            f"{self.api}/{api_method}",
+            provider="Telegram",
+            operation=operation,
+            **kwargs,
+        )
+        if not data.get("ok"):
             raise ProviderError("Telegram", operation)
         return data
 
 
+def _one_line(value: str, limit: int) -> str:
+    return re.sub(r"\s+", " ", value).strip()[:limit]
+
+
 def _digest_entry(index: int, item: DigestItem) -> str:
     sender_name, sender_address = parseaddr(item.sender)
-    sender = re.sub(r"\s+", " ", sender_name or sender_address or item.sender).strip()[:120]
-    subject = re.sub(r"\s+", " ", item.subject).strip()[:SUBJECT_LIMIT]
+    sender = _one_line(sender_name or sender_address or item.sender, 120)
+    subject = _one_line(item.subject, SUBJECT_LIMIT)
     entry = f"{index}. {sender} — {subject}"
     if item.summary:
         entry += f"\n   {_plain_text(item.summary)}"
     return entry[:MESSAGE_LIMIT]
 
 
-def _message_id(data: dict) -> str | None:
+def _message_id(data: dict[str, Any]) -> str | None:
     result = data.get("result")
     if isinstance(result, dict) and "message_id" in result:
         return str(result["message_id"])

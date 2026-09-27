@@ -51,9 +51,11 @@ and refuses any destination that resolves to a private or internal address.
 ```text
 src/whisp/
 ├── core/
-│   ├── models.py
-│   ├── pipeline.py
-│   └── store.py
+│   ├── errors.py        # SafeWhispError, ProviderError, safe_error_message
+│   ├── models.py        # provider-neutral value objects
+│   ├── pipeline.py      # polling, delivery, digest scheduling
+│   ├── readiness.py
+│   └── store.py         # SQLite state
 ├── inputs/
 │   ├── base.py
 │   └── gmail/
@@ -62,27 +64,40 @@ src/whisp/
 │       └── parser.py
 ├── processors/
 │   ├── base.py
-│   └── openrouter.py
+│   ├── openrouter.py
+│   └── profile.py       # assistant personalization (config/assistant.toml)
 ├── outputs/
 │   ├── base.py
 │   └── telegram.py
 ├── chat/
 │   ├── agent.py
 │   ├── documents.py
+│   ├── models.py
 │   ├── prompt.py
 │   ├── tools.py
 │   └── web.py
 ├── webhooks/
 │   └── telegram.py
-├── app.py
+├── templates/           # dashboard HTML
+├── app.py               # FastAPI app and background jobs
 ├── cli.py
 ├── config.py
-└── runtime.py
+├── dashboard.py
+├── http.py              # shared provider request helper that sanitizes failures
+├── logging_config.py
+├── runtime.py           # composition root
+└── text.py              # HTML-to-text and URL helpers
 ```
 
-`runtime.py` is the composition root. It reads configuration, constructs the selected
-provider for each layer, and injects those providers into the pipeline. `app.py` and
-`cli.py` expose the same composed workflow through HTTP, a background poller, and commands.
+`runtime.py` is the composition root. `build_runtime()` reads configuration, constructs
+each provider once, and returns a `Runtime` holding the store, the pipeline, the Telegram
+output and the chat agent. One Gmail instance serves as both the pipeline input and the
+chat mailbox, and one Telegram instance both notifies and replies. `app.py` and `cli.py`
+expose the same runtime through HTTP, background jobs, and commands.
+
+Provider HTTP calls go through `whisp.http.request_json`, which turns every transport,
+status and decoding failure into a `ProviderError` raised `from None`, so request URLs
+and credentials never reach logs.
 
 ## Processing sequence
 

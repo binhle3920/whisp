@@ -1,10 +1,12 @@
 import logging
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from whisp.core.errors import SafeWhispError
 from whisp.core.models import DigestItem, EmailCategory, EmailMessage, ProcessedEmail
-from whisp.core.pipeline import Pipeline
+from whisp.core.pipeline import Pipeline, next_digest_at
 from whisp.core.store import Store
 from whisp.inputs.base import BaseEmailInput
 from whisp.outputs.base import BaseNotificationOutput
@@ -317,3 +319,26 @@ async def test_notifications_are_linked_to_their_email(tmp_path) -> None:
 
     assert store.email_for_notification("tg-message-1") == "message-1"
     assert store.email_for_notification("unknown") is None
+
+
+async def test_digest_is_sent_once_per_day_after_digest_time(tmp_path) -> None:
+    store = Store(tmp_path / "whisp.db")
+    output = RecordingOutput()
+    pipeline = make_pipeline(store, FakeInput(), FakeProcessor(), output)
+    store.queue_digest(EmailMessage("promo", "t", "shop@example.com", "Sale", "Body"), summary=None)
+
+    assert await pipeline.send_digest_if_due(datetime(2026, 9, 25, 22, 59), time(23)) is None
+    assert await pipeline.send_digest_if_due(datetime(2026, 9, 25, 23, 0), time(23)) == 1
+    assert await pipeline.send_digest_if_due(datetime(2026, 9, 25, 23, 30), time(23)) is None
+    # A new day is due again, even with nothing pending.
+    assert await pipeline.send_digest_if_due(datetime(2026, 9, 26, 23, 5), time(23)) == 0
+    assert len(output.digests) == 1
+
+
+def test_next_digest_rolls_to_tomorrow_once_sent() -> None:
+    zone = ZoneInfo("Asia/Ho_Chi_Minh")
+    evening = datetime(2026, 9, 25, 23, 30, tzinfo=zone)
+
+    assert next_digest_at(evening, time(23), None).day == 25
+    assert next_digest_at(evening, time(23), "2026-09-25").day == 26
+    assert next_digest_at(datetime(2026, 9, 25, 9, tzinfo=zone), time(23), "2026-09-24").day == 25

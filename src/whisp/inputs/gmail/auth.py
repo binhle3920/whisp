@@ -8,7 +8,7 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
 class GmailAuth:
-    def __init__(self, token_path: Path) -> None:
+    def __init__(self, *, token_path: Path) -> None:
         self.token_path = token_path
         self._credentials: Credentials | None = None
         self._lock = asyncio.Lock()

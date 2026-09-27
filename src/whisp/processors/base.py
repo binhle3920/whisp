@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from whisp.chat.models import ChatCompletion
-from whisp.core.models import EmailMessage, ProcessedEmail
+from whisp.core.models import ChatCompletion, EmailMessage, ProcessedEmail
 
 
 class BaseEmailProcessor(ABC):

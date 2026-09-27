@@ -23,9 +23,12 @@ async def test_fetches_public_page_as_text() -> None:
     )
 
     async with httpx.AsyncClient() as client:
-        result = await WebFetcher(client, resolver_for({})).fetch("https://example.com/offer")
+        result = await WebFetcher(client=client, resolver=resolver_for({})).fetch(
+            "https://example.com/offer"
+        )
 
-    assert "Sale" in result.text and "50% off" in result.text
+    assert "Sale" in result.text
+    assert "50% off" in result.text
 
 
 @pytest.mark.parametrize(
@@ -34,7 +37,7 @@ async def test_fetches_public_page_as_text() -> None:
 )
 async def test_private_addresses_are_blocked(address: str) -> None:
     async with httpx.AsyncClient() as client:
-        fetcher = WebFetcher(client, resolver_for({"internal.test": address}))
+        fetcher = WebFetcher(client=client, resolver=resolver_for({"internal.test": address}))
         with pytest.raises(WebFetchError, match="private or internal"):
             await fetcher.fetch("http://internal.test/status")
 
@@ -47,7 +50,9 @@ async def test_redirect_to_private_address_is_blocked() -> None:
     metadata = respx.get("http://metadata.test/latest")
 
     async with httpx.AsyncClient() as client:
-        fetcher = WebFetcher(client, resolver_for({"metadata.test": "169.254.169.254"}))
+        fetcher = WebFetcher(
+            client=client, resolver=resolver_for({"metadata.test": "169.254.169.254"})
+        )
         with pytest.raises(WebFetchError, match="private or internal"):
             await fetcher.fetch("https://example.com/r")
 
@@ -57,7 +62,7 @@ async def test_redirect_to_private_address_is_blocked() -> None:
 async def test_non_http_schemes_are_refused() -> None:
     async with httpx.AsyncClient() as client:
         with pytest.raises(WebFetchError, match="http and https"):
-            await WebFetcher(client, resolver_for({})).fetch("file:///etc/passwd")
+            await WebFetcher(client=client, resolver=resolver_for({})).fetch("file:///etc/passwd")
 
 
 @respx.mock
@@ -68,4 +73,6 @@ async def test_oversized_pages_are_refused() -> None:
 
     async with httpx.AsyncClient() as client:
         with pytest.raises(WebFetchError, match="too large"):
-            await WebFetcher(client, resolver_for({})).fetch("https://example.com/huge")
+            await WebFetcher(client=client, resolver=resolver_for({})).fetch(
+                "https://example.com/huge"
+            )

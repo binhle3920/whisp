@@ -7,12 +7,15 @@ import httpx
 
 from whisp.core.errors import ProviderError
 from whisp.core.models import EmailMessage, EmailSummary
+from whisp.http import request_json
 from whisp.inputs.base import BaseEmailInput, BaseMailbox, InputCursorExpired
 from whisp.inputs.gmail.auth import GmailAuth
 from whisp.inputs.gmail.parser import parse_message, parse_summary
 
 MAX_SEARCH_RESULTS = 10
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+# Messages carrying any of these labels are never notified, even when also in the inbox.
+EXCLUDED_LABELS = frozenset({"SPAM", "TRASH", "SENT", "DRAFT"})
 # Gmail message and attachment ids are URL-safe tokens. The chat assistant passes ids
 # chosen by a model, so reject anything that could alter the request path.
 _ID = re.compile(r"[A-Za-z0-9_-]{1,1024}")
@@ -27,7 +30,7 @@ def _checked_id(value: str) -> str:
 class GmailInput(BaseEmailInput, BaseMailbox):
     base_url = "https://gmail.googleapis.com/gmail/v1/users/me"
 
-    def __init__(self, auth: GmailAuth, client: httpx.AsyncClient) -> None:
+    def __init__(self, *, auth: GmailAuth, client: httpx.AsyncClient) -> None:
         self.auth = auth
         self.client = client
 
@@ -37,26 +40,19 @@ class GmailInput(BaseEmailInput, BaseMailbox):
         except Exception:
             raise ProviderError("Gmail", "authentication") from None
         try:
-            response = await self.client.get(
+            return await request_json(
+                self.client,
+                "GET",
                 f"{self.base_url}/{path}",
+                provider="Gmail",
+                operation="request",
                 params=params,
                 headers={"Authorization": f"Bearer {token}"},
             )
-        except httpx.HTTPError:
-            raise ProviderError("Gmail", "request") from None
-        if response.status_code == 404 and path == "history":
-            raise InputCursorExpired
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError:
-            raise ProviderError("Gmail", "request", status_code=response.status_code) from None
-        try:
-            data = response.json()
-        except ValueError:
-            raise ProviderError("Gmail", "response decoding") from None
-        if not isinstance(data, dict):
-            raise ProviderError("Gmail", "response decoding")
-        return data
+        except ProviderError as error:
+            if error.status_code == 404 and path == "history":
+                raise InputCursorExpired from None
+            raise
 
     async def current_cursor(self) -> str:
         profile = await self._get("profile")
@@ -116,8 +112,7 @@ class GmailInput(BaseEmailInput, BaseMailbox):
                 for added in event.get("messagesAdded", []):
                     message = added.get("message", {})
                     labels = set(message.get("labelIds", []))
-                    blocked = {"SPAM", "TRASH", "SENT", "DRAFT"}
-                    if "INBOX" in labels and not labels.intersection(blocked):
+                    if "INBOX" in labels and not labels & EXCLUDED_LABELS:
                         ids.append(message["id"])
             page_token = data.get("nextPageToken")
             if not page_token:

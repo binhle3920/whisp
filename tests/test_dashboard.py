@@ -1,17 +1,12 @@
-from datetime import datetime, time
 from types import SimpleNamespace
-from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from whisp.config import Settings
-from whisp.core.models import EmailMessage
+from whisp.core.models import EmailMessage, PollResult
 from whisp.core.store import Store
-from whisp.dashboard import _next_digest, router
-
-VN = ZoneInfo("Asia/Ho_Chi_Minh")
-
+from whisp.dashboard import router
 
 USER = "admin"
 PASSWORD = "correct-horse-battery"
@@ -33,7 +28,8 @@ def make_client(
         dashboard_username=USER if login else None,
         dashboard_password=PASSWORD if login else None,
     )
-    app.state.readiness = SimpleNamespace(snapshot=lambda: readiness) if readiness else None
+    snapshot = readiness or {"ready": False, "checked_at": None, "checks": {}}
+    app.state.readiness = SimpleNamespace(snapshot=lambda: snapshot)
     # The session cookie is Secure, so the client must talk https to get it back.
     client = TestClient(app, base_url="https://testserver")
     if login and logged_in:
@@ -51,7 +47,7 @@ def test_dashboard_renders_status_messages_and_outcomes(tmp_path) -> None:
     store.mark_processed(EmailMessage("m1", "t1", "Alice <alice@example.com>", "Contract", "Body"))
     store.queue_digest(EmailMessage("m2", "t2", "deals@shop.com", "Big sale", "Body"), summary=None)
     run_id = store.start_run()
-    store.finish_run(run_id, discovered=2, notified=1, skipped=0, failed=0)
+    store.finish_run(run_id, PollResult(discovered=2, notified=1))
     readiness = {
         "ready": False,
         "checked_at": "2026-09-25T16:49:21+00:00",
@@ -68,8 +64,10 @@ def test_dashboard_renders_status_messages_and_outcomes(tmp_path) -> None:
     html = response.text
     assert "79672d6" in html
     assert "Gmail authentication failed" in html
-    assert "Contract" in html and "Notified" in html
-    assert "Big sale" in html and "Held for digest" in html
+    assert "Contract" in html
+    assert "Notified" in html
+    assert "Big sale" in html
+    assert "Held for digest" in html
 
 
 def test_dashboard_escapes_untrusted_email_fields(tmp_path) -> None:
@@ -82,21 +80,6 @@ def test_dashboard_escapes_untrusted_email_fields(tmp_path) -> None:
 
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" in html
-
-
-def test_dashboard_is_unavailable_without_store(tmp_path) -> None:
-    client = make_client(Store(tmp_path / "whisp.db"))
-    client.app.state.store = None  # type: ignore[attr-defined]
-
-    assert client.get("/dashboard").status_code == 503
-
-
-def test_next_digest_rolls_to_tomorrow_once_sent() -> None:
-    evening = datetime(2026, 9, 25, 23, 30, tzinfo=VN)
-
-    assert _next_digest(evening, time(23), None).day == 25
-    assert _next_digest(evening, time(23), "2026-09-25").day == 26
-    assert _next_digest(datetime(2026, 9, 25, 9, tzinfo=VN), time(23), "2026-09-24").day == 25
 
 
 def test_dashboard_redirects_to_login_without_a_session(tmp_path) -> None:
@@ -113,8 +96,10 @@ def test_login_form_is_password_manager_friendly(tmp_path) -> None:
 
     html = client.get("/dashboard/login").text
 
-    assert 'name="username"' in html and 'autocomplete="username"' in html
-    assert 'type="password"' in html and 'autocomplete="current-password"' in html
+    assert 'name="username"' in html
+    assert 'autocomplete="username"' in html
+    assert 'type="password"' in html
+    assert 'autocomplete="current-password"' in html
 
 
 def test_login_sets_a_hardened_session_cookie(tmp_path) -> None:

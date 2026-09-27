@@ -1,6 +1,9 @@
 import argparse
 import asyncio
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import asdict
 
 import httpx
 import uvicorn
@@ -11,7 +14,7 @@ from whisp.config import get_settings
 from whisp.core.store import Store
 from whisp.inputs.gmail.auth import SCOPES
 from whisp.logging_config import configure_logging
-from whisp.runtime import build_chat_agent, build_pipeline
+from whisp.runtime import Runtime, build_runtime
 
 
 def _authorize() -> None:
@@ -28,32 +31,31 @@ def _authorize() -> None:
     print(f"Gmail authorization saved to {settings.google_token_path}")
 
 
-async def _poll(backfill: bool) -> None:
+@asynccontextmanager
+async def _runtime() -> AsyncIterator[Runtime]:
     settings = get_settings()
     configure_logging(settings.log_level)
     async with httpx.AsyncClient(timeout=30) as client:
-        pipeline = build_pipeline(settings, client)
-        await pipeline.output.check()
-        result = await pipeline.run_once(backfill=backfill)
-    print(json.dumps(result.__dict__, indent=2))
+        yield build_runtime(settings, client)
+
+
+async def _poll(backfill: bool) -> None:
+    async with _runtime() as runtime:
+        await runtime.pipeline.output.check()
+        result = await runtime.pipeline.run_once(backfill=backfill)
+    print(json.dumps(asdict(result), indent=2))
 
 
 async def _digest() -> None:
-    settings = get_settings()
-    configure_logging(settings.log_level)
-    async with httpx.AsyncClient(timeout=30) as client:
-        pipeline = build_pipeline(settings, client)
-        sent = await pipeline.send_digest()
+    async with _runtime() as runtime:
+        sent = await runtime.pipeline.send_digest()
     print(json.dumps({"sent": sent}, indent=2))
 
 
 async def _chat(question: str) -> None:
-    settings = get_settings()
-    configure_logging(settings.log_level)
-    async with httpx.AsyncClient(timeout=30) as client:
-        agent = build_chat_agent(settings, client, Store(settings.db_path))
+    async with _runtime() as runtime:
         # A separate history from the Telegram chat, so local testing never mixes in.
-        answer = await agent.reply(ChatRequest(chat_id="cli", text=question))
+        answer = await runtime.chat_agent.reply(ChatRequest(chat_id="cli", text=question))
     print(answer)
 
 

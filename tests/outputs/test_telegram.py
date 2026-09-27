@@ -23,7 +23,7 @@ async def test_telegram_sends_conversational_plain_text_with_gmail_link() -> Non
     )
 
     async with httpx.AsyncClient() as client:
-        output = TelegramOutput("test-token", "123", client)
+        output = TelegramOutput(token="test-token", chat_id="123", client=client)
         await output.send(
             message,
             "**Bạn có ưu đãi trả góp 0%.** [Xem ưu đãi](https://example.com/deal)",
@@ -62,7 +62,7 @@ async def test_telegram_keeps_footer_when_truncating_long_content() -> None:
     message = EmailMessage("message-1", "", "alice@example.com", "Hello", "Body")
 
     async with httpx.AsyncClient() as client:
-        output = TelegramOutput("test-token", "123", client)
+        output = TelegramOutput(token="test-token", chat_id="123", client=client)
         await output.send(message, "x" * 5000)
 
     text = json.loads(route.calls.last.request.content)["text"]
@@ -78,7 +78,7 @@ async def test_telegram_button_uses_message_id_when_thread_id_is_missing() -> No
     message = EmailMessage("message/id", "", "alice@example.com", "Hello", "Body")
 
     async with httpx.AsyncClient() as client:
-        output = TelegramOutput("test-token", "123", client)
+        output = TelegramOutput(token="test-token", chat_id="123", client=client)
         await output.send(message, "Summary")
 
     payload = json.loads(route.calls.last.request.content)
@@ -97,7 +97,7 @@ async def test_telegram_failure_does_not_expose_token_or_request_url() -> None:
     message = EmailMessage("message-1", "thread-1", "alice@example.com", "Hello", "Body")
 
     async with httpx.AsyncClient() as client:
-        output = TelegramOutput(token, "123", client)
+        output = TelegramOutput(token=token, chat_id="123", client=client)
         with pytest.raises(ProviderError) as exc_info:
             await output.send(message, "Summary")
 
@@ -118,7 +118,7 @@ async def test_telegram_digest_lists_each_held_email() -> None:
     ]
 
     async with httpx.AsyncClient() as client:
-        await TelegramOutput("test-token", "123", client).send_digest(items)
+        await TelegramOutput(token="test-token", chat_id="123", client=client).send_digest(items)
 
     assert route.call_count == 1
     payload = json.loads(route.calls.last.request.content)
@@ -143,7 +143,7 @@ async def test_telegram_digest_splits_long_lists_between_items() -> None:
     ]
 
     async with httpx.AsyncClient() as client:
-        await TelegramOutput("test-token", "123", client).send_digest(items)
+        await TelegramOutput(token="test-token", chat_id="123", client=client).send_digest(items)
 
     texts = [json.loads(call.request.content)["text"] for call in route.calls]
     assert len(texts) > 1
@@ -161,7 +161,7 @@ async def test_telegram_digest_failure_does_not_expose_token() -> None:
 
     async with httpx.AsyncClient() as client:
         with pytest.raises(ProviderError) as exc_info:
-            await TelegramOutput(token, "123", client).send_digest(
+            await TelegramOutput(token=token, chat_id="123", client=client).send_digest(
                 [DigestItem("m1", "t1", "shop@example.com", "Sale")]
             )
 
@@ -177,7 +177,9 @@ async def test_send_returns_telegram_message_id() -> None:
     message = EmailMessage("m1", "t1", "alice@example.com", "Hi", "Body")
 
     async with httpx.AsyncClient() as client:
-        reference = await TelegramOutput("test-token", "123", client).send(message, "Summary")
+        reference = await TelegramOutput(token="test-token", chat_id="123", client=client).send(
+            message, "Summary"
+        )
 
     assert reference == "321"
 
@@ -190,7 +192,9 @@ async def test_send_text_splits_long_replies_and_replies_to_first_chunk() -> Non
     text = "\n\n".join(f"Đoạn {index}: " + "x" * 900 for index in range(8))
 
     async with httpx.AsyncClient() as client:
-        await TelegramOutput("test-token", "123", client).send_text("42", text, reply_to="7")
+        await TelegramOutput(token="test-token", chat_id="123", client=client).send_text(
+            "42", text, reply_to="7"
+        )
 
     payloads = [json.loads(call.request.content) for call in route.calls]
     assert len(payloads) > 1
@@ -207,7 +211,7 @@ async def test_set_webhook_sends_secret_and_limits_updates() -> None:
     )
 
     async with httpx.AsyncClient() as client:
-        await TelegramOutput("test-token", "123", client).set_webhook(
+        await TelegramOutput(token="test-token", chat_id="123", client=client).set_webhook(
             "https://whisp.example.com/telegram/webhook", "s" * 40
         )
 

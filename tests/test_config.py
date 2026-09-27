@@ -1,3 +1,4 @@
+from datetime import time
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,7 @@ def test_digest_defaults_to_11pm_vietnam_time() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.digest_enabled is True
-    assert settings.digest_at.hour == 23
+    assert settings.digest_time == time(23, 0)
     assert settings.zone.key == "Asia/Ho_Chi_Minh"
 
 

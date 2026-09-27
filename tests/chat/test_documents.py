@@ -73,7 +73,8 @@ def test_xlsx_rows_are_extracted_per_sheet() -> None:
 def test_csv_and_html_are_converted_to_text() -> None:
     assert "a | b" in extract("data.csv", "text/csv", b"a,b\n1,2").text
     html = extract("page.html", "text/html", b"<p>Hello <b>there</b></p><script>x()</script>")
-    assert "Hello" in html.text and "x()" not in html.text
+    assert "Hello" in html.text
+    assert "x()" not in html.text
 
 
 def test_images_are_passed_through_for_vision() -> None:

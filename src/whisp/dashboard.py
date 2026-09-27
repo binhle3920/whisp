@@ -3,7 +3,7 @@ import hashlib
 import hmac
 import secrets
 import time as clock
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
@@ -13,7 +13,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from whisp.config import Settings
-from whisp.core.store import Store
+from whisp.core.pipeline import next_digest_at
+from whisp.core.store import LAST_DIGEST_KEY, Store
 
 RECENT_MESSAGES = 50
 RECENT_ACTIVITY = 20
@@ -32,7 +33,8 @@ def _login_configured(settings: Settings) -> bool:
 def _session_key(settings: Settings) -> bytes:
     # Derived from the configured login, so changing the password (or username)
     # invalidates every existing session without a separate secret to manage.
-    assert settings.dashboard_password is not None and settings.dashboard_username
+    assert settings.dashboard_password is not None
+    assert settings.dashboard_username
     return hmac.new(
         settings.dashboard_password.get_secret_value().encode(),
         b"whisp-dashboard-session:" + settings.dashboard_username.encode(),
@@ -65,7 +67,8 @@ def valid_session(settings: Settings, token: str | None, now: float) -> bool:
 
 
 def credentials_match(settings: Settings, username: str, password: str) -> bool:
-    assert settings.dashboard_password is not None and settings.dashboard_username
+    assert settings.dashboard_password is not None
+    assert settings.dashboard_username
     # Compare both fields every time, in constant time, so neither the result nor the
     # timing reveals whether the username alone was right.
     user_ok = secrets.compare_digest(username.encode(), settings.dashboard_username.encode())
@@ -116,21 +119,14 @@ def _ago(value: object, now: datetime) -> str:
     return f"{seconds // 86400} d ago"
 
 
-def _next_digest(now_local: datetime, digest_at: time, last_digest_date: str | None) -> datetime:
-    today = now_local.date()
-    due_today = now_local.time() < digest_at or last_digest_date != today.isoformat()
-    day = today if due_today else today + timedelta(days=1)
-    return datetime.combine(day, digest_at, tzinfo=now_local.tzinfo)
-
-
 def build_context(
-    store: Store, settings: Settings, readiness: dict[str, object] | None
+    store: Store, settings: Settings, readiness: dict[str, object]
 ) -> dict[str, object]:
     zone = settings.zone
     now = datetime.now(UTC)
     status = store.status()
-    last_digest_date = store.get("last_digest_date")
-    next_digest = _next_digest(now.astimezone(zone), settings.digest_at, last_digest_date)
+    last_digest_date = store.get(LAST_DIGEST_KEY)
+    next_digest = next_digest_at(now.astimezone(zone), settings.digest_time, last_digest_date)
 
     messages = []
     for row in store.recent_messages(RECENT_MESSAGES):
@@ -153,7 +149,7 @@ def build_context(
         "commit": commit,
         "commit_short": commit[:7] if commit and commit != "unknown" else commit or "local",
         "readiness": readiness,
-        "readiness_checked_at": _local((readiness or {}).get("checked_at"), zone),
+        "readiness_checked_at": _local(readiness.get("checked_at"), zone),
         "status": status,
         "last_success_ago": _ago(status["last_successful_poll_at"], now),
         "last_success_at": _local(status["last_successful_poll_at"], zone),
@@ -174,10 +170,7 @@ async def dashboard(request: Request) -> Response:
         raise HTTPException(503, "Dashboard login is not configured")
     if not valid_session(state.settings, request.cookies.get(SESSION_COOKIE), clock.time()):
         return RedirectResponse("/dashboard/login", status_code=303)
-    if state.store is None:
-        raise HTTPException(503, "Whisp is not configured")
-    readiness = state.readiness.snapshot() if state.readiness is not None else None
-    context = build_context(state.store, state.settings, readiness)
+    context = build_context(state.store, state.settings, state.readiness.snapshot())
     return _no_store(templates.TemplateResponse(request, "dashboard.html", context))
 
 

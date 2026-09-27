@@ -64,3 +64,17 @@ class PollResult:
     pending: int = 0
     # Marketing messages held for the daily digest instead of notified immediately.
     queued: int = 0
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    # Raw JSON from the model; parsed and validated by the tool that receives it.
+    arguments: str
+
+
+@dataclass(frozen=True)
+class ChatCompletion:
+    text: str | None = None
+    tool_calls: tuple[ToolCall, ...] = ()

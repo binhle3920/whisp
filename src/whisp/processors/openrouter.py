@@ -4,11 +4,17 @@ from typing import Any
 
 import httpx
 
-from whisp.chat.models import ChatCompletion, ToolCall
 from whisp.core.errors import ProviderError
-from whisp.core.models import EmailMessage, ProcessedEmail
+from whisp.core.models import ChatCompletion, EmailMessage, ProcessedEmail, ToolCall
+from whisp.http import request_json
 from whisp.processors.base import BaseChatModel, BaseEmailProcessor
 from whisp.processors.profile import AssistantProfile
+
+ATTEMPTS = 3
+
+
+def _retryable(error: ProviderError) -> bool:
+    return error.status_code is not None and (error.status_code == 429 or error.status_code >= 500)
 
 
 class _OpenRouterClient:
@@ -38,28 +44,22 @@ class _OpenRouterClient:
         if self.site_url:
             headers["HTTP-Referer"] = self.site_url
 
-        response: httpx.Response | None = None
-        for attempt in range(3):
+        for attempt in range(ATTEMPTS):
             try:
-                response = await self.client.post(
-                    self.endpoint, headers=headers, json={"model": self.model, **payload}
+                data = await request_json(
+                    self.client,
+                    "POST",
+                    self.endpoint,
+                    provider="OpenRouter",
+                    operation="request",
+                    headers=headers,
+                    json={"model": self.model, **payload},
                 )
-            except httpx.HTTPError:
-                raise ProviderError("OpenRouter", "request") from None
-            if response.status_code != 429 and response.status_code < 500:
                 break
-            if attempt < 2:
+            except ProviderError as error:
+                if not _retryable(error) or attempt == ATTEMPTS - 1:
+                    raise
                 await asyncio.sleep(2**attempt)
-
-        assert response is not None
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError:
-            raise ProviderError("OpenRouter", "request", status_code=response.status_code) from None
-        try:
-            data: dict[str, Any] = response.json()
-        except ValueError:
-            raise ProviderError("OpenRouter", "response decoding") from None
         try:
             message = data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError):
@@ -76,14 +76,14 @@ class OpenRouterProcessor(_OpenRouterClient, BaseEmailProcessor):
         api_key: str,
         model: str,
         client: httpx.AsyncClient,
+        profile: AssistantProfile,
         site_url: str | None = None,
         app_title: str = "Whisp",
-        profile: AssistantProfile | None = None,
     ) -> None:
         super().__init__(
             api_key=api_key, model=model, client=client, site_url=site_url, app_title=app_title
         )
-        self.profile = profile or AssistantProfile()
+        self.profile = profile
 
     async def process(self, message: EmailMessage) -> ProcessedEmail:
         reply = await self._post(

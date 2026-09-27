@@ -45,7 +45,7 @@ async def test_openrouter_processor_sends_expected_request() -> None:
             profile=AssistantProfile(
                 personality="Direct and pragmatic.",
                 default_language="Vietnamese",
-                priorities=["Project deadlines"],
+                priorities=("Project deadlines",),
             ),
         )
         result = await processor.process(message)
@@ -83,7 +83,7 @@ custom_instructions = "Mention currency amounts exactly."
     profile = AssistantProfile.from_file(profile_path)
 
     assert profile.default_language == "French"
-    assert profile.priorities == ["Invoices", "Customer complaints"]
+    assert profile.priorities == ("Invoices", "Customer complaints")
     assert "I run a small business." in profile.system_prompt()
 
 
@@ -103,7 +103,9 @@ async def test_openrouter_failure_does_not_expose_api_key_or_email_body() -> Non
     message = EmailMessage("m1", "t1", "alice@example.com", "Private", email_body)
 
     async with httpx.AsyncClient() as client:
-        processor = OpenRouterProcessor(api_key=api_key, model="test-model", client=client)
+        processor = OpenRouterProcessor(
+            api_key=api_key, model="test-model", client=client, profile=AssistantProfile()
+        )
         with pytest.raises(ProviderError) as exc_info:
             await processor.process(message)
 
@@ -143,7 +145,9 @@ async def test_openrouter_parses_marketing_classification(
     message = EmailMessage("m1", "t1", "deals@shop.com", "Sale", "Big sale")
 
     async with httpx.AsyncClient() as client:
-        processor = OpenRouterProcessor(api_key="k", model="test-model", client=client)
+        processor = OpenRouterProcessor(
+            api_key="k", model="test-model", client=client, profile=AssistantProfile()
+        )
         assert await processor.process(message) == expected
 
 
@@ -155,7 +159,9 @@ async def test_openrouter_rejects_empty_notification() -> None:
     message = EmailMessage("m1", "t1", "alice@example.com", "Hi", "Body")
 
     async with httpx.AsyncClient() as client:
-        processor = OpenRouterProcessor(api_key="k", model="test-model", client=client)
+        processor = OpenRouterProcessor(
+            api_key="k", model="test-model", client=client, profile=AssistantProfile()
+        )
         with pytest.raises(ProviderError):
             await processor.process(message)
 
@@ -213,3 +219,48 @@ async def test_chat_model_rejects_empty_reply() -> None:
         model = OpenRouterChatModel(api_key="k", model="m", client=client)
         with pytest.raises(ProviderError):
             await model.complete([{"role": "user", "content": "hi"}], [])
+
+
+@respx.mock
+async def test_openrouter_retries_rate_limits_and_server_errors(monkeypatch) -> None:
+    sleeps: list[float] = []
+
+    async def no_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("whisp.processors.openrouter.asyncio.sleep", no_sleep)
+    route = respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        side_effect=[
+            httpx.Response(429),
+            httpx.Response(503),
+            completion(json.dumps({"marketing": False, "notification": "Hello."})),
+        ]
+    )
+    message = EmailMessage("m1", "t1", "a@example.com", "Hi", "Body")
+
+    async with httpx.AsyncClient() as client:
+        processor = OpenRouterProcessor(
+            api_key="k", model="test-model", client=client, profile=AssistantProfile()
+        )
+        result = await processor.process(message)
+
+    assert result == ProcessedEmail(text="Hello.")
+    assert route.call_count == 3
+    assert sleeps == [1, 2]
+
+
+@respx.mock
+async def test_openrouter_does_not_retry_client_errors() -> None:
+    route = respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        return_value=httpx.Response(400)
+    )
+    message = EmailMessage("m1", "t1", "a@example.com", "Hi", "Body")
+
+    async with httpx.AsyncClient() as client:
+        processor = OpenRouterProcessor(
+            api_key="k", model="test-model", client=client, profile=AssistantProfile()
+        )
+        with pytest.raises(ProviderError, match="HTTP 400"):
+            await processor.process(message)
+
+    assert route.call_count == 1

@@ -4,8 +4,9 @@ from zoneinfo import ZoneInfo
 from chat_fakes import FakeFetcher, FakeMailbox, ScriptedModel, invoice_email
 
 from whisp.chat.agent import HISTORY_TURNS, MAX_TOOL_ROUNDS, ChatAgent
-from whisp.chat.models import ChatCompletion, ChatRequest, ToolCall
+from whisp.chat.models import ChatRequest
 from whisp.chat.tools import MailTools
+from whisp.core.models import ChatCompletion, ToolCall
 from whisp.core.store import Store
 from whisp.processors.profile import AssistantProfile
 

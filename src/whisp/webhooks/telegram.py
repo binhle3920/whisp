@@ -6,9 +6,11 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.datastructures import State
 
 from whisp.chat.models import ChatRequest
 from whisp.core.errors import safe_error_message
+from whisp.outputs.telegram import TelegramOutput
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -29,7 +31,7 @@ TYPING_INTERVAL_SECONDS = 4
 async def telegram_webhook(request: Request) -> JSONResponse:
     state = request.app.state
     settings = state.settings
-    if getattr(state, "chat_agent", None) is None or not settings.webhook_configured:
+    if state.chat_agent is None or not settings.webhook_configured:
         raise HTTPException(404)
     supplied = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
     expected = settings.telegram_webhook_secret.get_secret_value()
@@ -58,8 +60,8 @@ async def telegram_webhook(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
-async def _handle(state: Any, chat_id: str, message: dict[str, Any]) -> None:
-    telegram = state.telegram
+async def _handle(state: State, chat_id: str, message: dict[str, Any]) -> None:
+    telegram: TelegramOutput = state.telegram
     message_id = str(message.get("message_id", "")) or None
     text = message.get("text")
     try:
@@ -101,7 +103,7 @@ async def _handle(state: Any, chat_id: str, message: dict[str, Any]) -> None:
             await telegram.send_text(chat_id, ERROR_TEXT, reply_to=message_id)
 
 
-async def _keep_typing(telegram: Any, chat_id: str) -> None:
+async def _keep_typing(telegram: TelegramOutput, chat_id: str) -> None:
     # Telegram clears the typing indicator after about five seconds.
     while True:
         with contextlib.suppress(Exception):

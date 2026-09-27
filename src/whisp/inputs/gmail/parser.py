@@ -1,4 +1,5 @@
 import base64
+from collections.abc import Iterator
 from typing import Any
 
 from whisp.core.models import Attachment, EmailCategory, EmailMessage, EmailSummary
@@ -16,43 +17,50 @@ def _decode(data: str) -> str:
     return base64.urlsafe_b64decode(padded).decode("utf-8", errors="replace")
 
 
-def _find_bodies(part: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
+def _walk(part: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Yield a MIME part and all of its descendants, depth first."""
+    yield part
+    for child in part.get("parts", []):
+        yield from _walk(child)
+
+
+def _headers(payload: dict[str, Any]) -> dict[str, str]:
+    return {
+        item.get("name", "").lower(): item.get("value", "")
+        for item in payload.get("payload", {}).get("headers", [])
+    }
+
+
+def _find_bodies(root: dict[str, Any]) -> tuple[list[str], list[str], list[str]]:
     plain: list[str] = []
     html: list[str] = []
     links: list[str] = []
-    mime_type = part.get("mimeType", "")
-    data = part.get("body", {}).get("data")
-    # A part with a filename is an attachment even when it is text/plain or text/html.
-    if data and not part.get("filename"):
+    for part in _walk(root):
+        data = part.get("body", {}).get("data")
+        # A part with a filename is an attachment even when it is text/plain or text/html.
+        if not data or part.get("filename"):
+            continue
+        mime_type = part.get("mimeType", "")
         if mime_type == "text/plain":
             plain.append(_decode(data))
         elif mime_type == "text/html":
             raw = _decode(data)
             html.append(html_to_text(raw))
             links.extend(html_links(raw))
-    for child in part.get("parts", []):
-        child_plain, child_html, child_links = _find_bodies(child)
-        plain.extend(child_plain)
-        html.extend(child_html)
-        links.extend(child_links)
     return plain, html, links
 
 
-def _find_attachments(part: dict[str, Any]) -> list[Attachment]:
-    found: list[Attachment] = []
-    body = part.get("body", {})
-    if part.get("filename") and body.get("attachmentId"):
-        found.append(
-            Attachment(
-                id=body["attachmentId"],
-                filename=part["filename"],
-                mime_type=part.get("mimeType", "application/octet-stream"),
-                size=int(body.get("size", 0)),
-            )
+def _find_attachments(root: dict[str, Any]) -> tuple[Attachment, ...]:
+    return tuple(
+        Attachment(
+            id=part["body"]["attachmentId"],
+            filename=part["filename"],
+            mime_type=part.get("mimeType", "application/octet-stream"),
+            size=int(part["body"].get("size", 0)),
         )
-    for child in part.get("parts", []):
-        found.extend(_find_attachments(child))
-    return found
+        for part in _walk(root)
+        if part.get("filename") and part.get("body", {}).get("attachmentId")
+    )
 
 
 def _category(labels: list[str]) -> EmailCategory | None:
@@ -60,10 +68,7 @@ def _category(labels: list[str]) -> EmailCategory | None:
 
 
 def parse_message(payload: dict[str, Any], *, max_chars: int) -> EmailMessage:
-    headers = {
-        item.get("name", "").lower(): item.get("value", "")
-        for item in payload.get("payload", {}).get("headers", [])
-    }
+    headers = _headers(payload)
     plain, html, links = _find_bodies(payload.get("payload", {}))
     body = "\n\n".join(part.strip() for part in (plain or html) if part.strip())
     # HTML emails hide their link targets behind anchor text; list them so the
@@ -85,15 +90,12 @@ def parse_message(payload: dict[str, Any], *, max_chars: int) -> EmailMessage:
         body=body or "(empty message)",
         internal_date=payload.get("internalDate"),
         category=_category(payload.get("labelIds", [])),
-        attachments=tuple(_find_attachments(payload.get("payload", {}))),
+        attachments=_find_attachments(payload.get("payload", {})),
     )
 
 
 def parse_summary(payload: dict[str, Any]) -> EmailSummary:
-    headers = {
-        item.get("name", "").lower(): item.get("value", "")
-        for item in payload.get("payload", {}).get("headers", [])
-    }
+    headers = _headers(payload)
     return EmailSummary(
         id=payload["id"],
         sender=headers.get("from", "Unknown sender"),

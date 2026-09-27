@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 
-from whisp.chat.documents import UnsupportedDocument, extract
+from whisp.chat.documents import UnsupportedDocument, extract, limit_text
 from whisp.chat.models import ToolResult
 from whisp.core.errors import SafeWhispError
 from whisp.text import html_to_text
@@ -49,7 +49,7 @@ class WebFetcher:
     accepted because a URL must already appear in an email or the user's message.
     """
 
-    def __init__(self, client: httpx.AsyncClient, resolver: Resolver | None = None) -> None:
+    def __init__(self, *, client: httpx.AsyncClient, resolver: Resolver | None = None) -> None:
         self.client = client
         self.resolver = resolver or _system_resolver
 
@@ -104,8 +104,8 @@ class WebFetcher:
     def _to_result(self, url: str, content_type: str, body: bytes) -> ToolResult:
         kind = content_type.split(";")[0].strip().lower()
         if kind in ("text/html", "application/xhtml+xml", ""):
-            text = html_to_text(body.decode("utf-8", errors="replace"))
-            return ToolResult(text=f"URL: {url}\n\n{text[:20_000]}")
+            text = limit_text(html_to_text(body.decode("utf-8", errors="replace")))
+            return ToolResult(text=f"URL: {url}\n\n{text}")
         try:
             return extract(url.rsplit("/", 1)[-1] or "page", kind, body)
         except UnsupportedDocument as exc:

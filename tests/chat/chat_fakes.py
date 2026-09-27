@@ -1,8 +1,8 @@
 from typing import Any
 
-from whisp.chat.models import ChatCompletion, ToolResult
+from whisp.chat.models import ToolResult
 from whisp.chat.web import WebFetcher
-from whisp.core.models import Attachment, EmailMessage, EmailSummary
+from whisp.core.models import Attachment, ChatCompletion, EmailMessage, EmailSummary
 from whisp.inputs.base import BaseMailbox
 from whisp.processors.base import BaseChatModel
 

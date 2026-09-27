@@ -19,7 +19,7 @@ async def test_gmail_failure_does_not_expose_oauth_token_or_response() -> None:
     )
 
     async with httpx.AsyncClient() as client:
-        gmail = GmailInput(FakeAuth(), client)  # type: ignore[arg-type]
+        gmail = GmailInput(auth=FakeAuth(), client=client)  # type: ignore[arg-type]
         with pytest.raises(ProviderError) as exc_info:
             await gmail.current_cursor()
 
@@ -55,7 +55,7 @@ async def test_search_returns_summaries_from_metadata() -> None:
     )
 
     async with httpx.AsyncClient() as client:
-        results = await GmailInput(FakeAuth(), client).search(  # type: ignore[arg-type]
+        results = await GmailInput(auth=FakeAuth(), client=client).search(  # type: ignore[arg-type]
             "subject:contract", limit=50
         )
 
@@ -74,7 +74,7 @@ async def test_download_attachment_decodes_base64() -> None:
     )
 
     async with httpx.AsyncClient() as client:
-        data = await GmailInput(FakeAuth(), client).download_attachment(  # type: ignore[arg-type]
+        data = await GmailInput(auth=FakeAuth(), client=client).download_attachment(  # type: ignore[arg-type]
             "m1", "att_1"
         )
 
@@ -83,7 +83,7 @@ async def test_download_attachment_decodes_base64() -> None:
 
 async def test_ids_that_could_alter_the_request_path_are_rejected() -> None:
     async with httpx.AsyncClient() as client:
-        gmail = GmailInput(FakeAuth(), client)  # type: ignore[arg-type]
+        gmail = GmailInput(auth=FakeAuth(), client=client)  # type: ignore[arg-type]
         with pytest.raises(ProviderError, match="invalid id"):
             await gmail.fetch("../drafts", max_chars=1000)
         with pytest.raises(ProviderError, match="invalid id"):

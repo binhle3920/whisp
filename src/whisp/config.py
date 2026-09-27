@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # Marketing mail is held and delivered once a day at digest_time in this timezone.
     digest_enabled: bool = True
-    digest_time: str = "23:00"
+    digest_time: time = time(23, 0)
     timezone: str = "Asia/Ho_Chi_Minh"
 
     # Login for /dashboard. The dashboard stays disabled until both are set.
@@ -77,10 +77,6 @@ class Settings(BaseSettings):
             )
         return value
 
-    @property
-    def webhook_configured(self) -> bool:
-        return bool(self.chat_enabled and self.public_base_url and self.telegram_webhook_secret)
-
     @field_validator("dashboard_password")
     @classmethod
     def _validate_dashboard_password(cls, value: SecretStr | None) -> SecretStr | None:
@@ -89,15 +85,6 @@ class Settings(BaseSettings):
         if value is not None and len(value.get_secret_value()) < 12:
             raise ValueError("dashboard_password must be at least 12 characters")
         return value
-
-    @field_validator("digest_time")
-    @classmethod
-    def _validate_digest_time(cls, value: str) -> str:
-        try:
-            parsed = time.fromisoformat(value)
-        except ValueError:
-            raise ValueError("digest_time must be HH:MM") from None
-        return parsed.strftime("%H:%M")
 
     @field_validator("timezone")
     @classmethod
@@ -109,8 +96,8 @@ class Settings(BaseSettings):
         return value
 
     @property
-    def digest_at(self) -> time:
-        return time.fromisoformat(self.digest_time)
+    def webhook_configured(self) -> bool:
+        return bool(self.chat_enabled and self.public_base_url and self.telegram_webhook_secret)
 
     @property
     def zone(self) -> ZoneInfo:
@@ -123,17 +110,6 @@ class Settings(BaseSettings):
     @property
     def google_token_path(self) -> Path:
         return self.credentials_dir / "google_token.json"
-
-    def require_runtime_secrets(self) -> None:
-        missing = []
-        if self.openrouter_api_key is None:
-            missing.append("WHISP_OPENROUTER_API_KEY")
-        if self.telegram_bot_token is None:
-            missing.append("WHISP_TELEGRAM_BOT_TOKEN")
-        if not self.telegram_chat_id:
-            missing.append("WHISP_TELEGRAM_CHAT_ID")
-        if missing:
-            raise ValueError(f"Missing required configuration: {', '.join(missing)}")
 
 
 @lru_cache

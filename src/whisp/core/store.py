@@ -4,7 +4,25 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from whisp.core.models import DigestItem, EmailMessage
+from whisp.core.models import DigestItem, EmailMessage, PollResult
+
+# kv keys.
+CURSOR_KEY = "history_id"
+LAST_DIGEST_KEY = "last_digest_date"
+
+_RUNS_WITH_DURATION = """
+    SELECT *, CASE WHEN finished_at IS NULL THEN NULL ELSE
+        CAST((julianday(finished_at) - julianday(started_at)) * 86400000 AS INTEGER)
+        END AS duration_ms
+    FROM runs
+"""
+
+
+def _insert_processed(db: sqlite3.Connection, message: EmailMessage) -> None:
+    db.execute(
+        "INSERT OR IGNORE INTO processed_messages(message_id, subject, sender) VALUES (?, ?, ?)",
+        (message.id, message.subject, message.sender),
+    )
 
 
 class Store:
@@ -17,7 +35,6 @@ class Store:
     def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.path, timeout=5)
         connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
         try:
             yield connection
             connection.commit()
@@ -26,6 +43,8 @@ class Store:
 
     def _initialize(self) -> None:
         with self._connect() as db:
+            # WAL is a persistent property of the database file, so setting it once is enough.
+            db.execute("PRAGMA journal_mode=WAL")
             db.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS kv (
@@ -102,13 +121,7 @@ class Store:
 
     def mark_processed(self, message: EmailMessage) -> None:
         with self._connect() as db:
-            db.execute(
-                """
-                INSERT OR IGNORE INTO processed_messages(message_id, subject, sender)
-                VALUES (?, ?, ?)
-                """,
-                (message.id, message.subject, message.sender),
-            )
+            _insert_processed(db, message)
 
     def queue_digest(self, message: EmailMessage, *, summary: str | None) -> None:
         # Queuing counts as processing: one transaction so a held message is never
@@ -121,13 +134,7 @@ class Store:
                 """,
                 (message.id, message.thread_id, message.sender, message.subject, summary),
             )
-            db.execute(
-                """
-                INSERT OR IGNORE INTO processed_messages(message_id, subject, sender)
-                VALUES (?, ?, ?)
-                """,
-                (message.id, message.subject, message.sender),
-            )
+            _insert_processed(db, message)
 
     def pending_digest(self) -> list[DigestItem]:
         with self._connect() as db:
@@ -214,16 +221,7 @@ class Store:
             )
             return int(cursor.lastrowid)
 
-    def finish_run(
-        self,
-        run_id: int,
-        *,
-        discovered: int,
-        notified: int,
-        skipped: int,
-        failed: int,
-        error: str | None = None,
-    ) -> None:
+    def finish_run(self, run_id: int, result: PollResult, *, error: str | None = None) -> None:
         with self._connect() as db:
             db.execute(
                 """
@@ -232,10 +230,10 @@ class Store:
                 """,
                 (
                     datetime.now(UTC).isoformat(),
-                    discovered,
-                    notified,
-                    skipped,
-                    failed,
+                    result.discovered,
+                    result.notified,
+                    result.skipped,
+                    result.failed,
                     error,
                     run_id,
                 ),
@@ -260,28 +258,16 @@ class Store:
         # nothing are noise, so only runs with work or errors are returned.
         with self._connect() as db:
             rows = db.execute(
-                """
-                SELECT *, CASE WHEN finished_at IS NULL THEN NULL ELSE
-                    CAST((julianday(finished_at) - julianday(started_at)) * 86400000 AS INTEGER)
-                    END AS duration_ms
-                FROM runs
-                WHERE discovered > 0 OR failed > 0 OR error IS NOT NULL
-                ORDER BY id DESC LIMIT ?
-                """,
+                _RUNS_WITH_DURATION
+                + "WHERE discovered > 0 OR failed > 0 OR error IS NOT NULL "
+                + "ORDER BY id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
 
     def status(self) -> dict[str, object]:
         with self._connect() as db:
-            run = db.execute(
-                """
-                SELECT *, CASE WHEN finished_at IS NULL THEN NULL ELSE
-                    CAST((julianday(finished_at) - julianday(started_at)) * 86400000 AS INTEGER)
-                    END AS duration_ms
-                FROM runs ORDER BY id DESC LIMIT 1
-                """
-            ).fetchone()
+            run = db.execute(_RUNS_WITH_DURATION + "ORDER BY id DESC LIMIT 1").fetchone()
             last_success = db.execute(
                 """
                 SELECT finished_at FROM runs
@@ -297,7 +283,7 @@ class Store:
                 """
             ).fetchone()
             count = db.execute("SELECT COUNT(*) AS count FROM processed_messages").fetchone()
-            cursor = db.execute("SELECT value FROM kv WHERE key = 'history_id'").fetchone()
+            cursor = db.execute("SELECT value FROM kv WHERE key = ?", (CURSOR_KEY,)).fetchone()
             digest = db.execute(
                 "SELECT COUNT(*) AS count FROM digest_queue WHERE sent_at IS NULL"
             ).fetchone()
@@ -308,10 +294,4 @@ class Store:
             "last_run": dict(run) if run else None,
             "last_successful_poll_at": last_success["finished_at"] if last_success else None,
             "last_failure": dict(last_failure) if last_failure else None,
-            "queue": {
-                "available": False,
-                "pending": 0,
-                "retrying": 0,
-                "dead_letter": 0,
-            },
         }

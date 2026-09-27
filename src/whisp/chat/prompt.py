@@ -4,20 +4,10 @@ from whisp.processors.profile import AssistantProfile
 
 
 def chat_system_prompt(profile: AssistantProfile, now: datetime) -> str:
-    priorities = "\n".join(f"- {item}" for item in profile.priorities) or "- None configured."
     return f"""You are the user's personal inbox assistant, chatting with them in Telegram.
+Reply in the language the user writes in, or the default language below when unclear.
 
-Personality: {profile.personality}
-Default language: {profile.default_language}. Reply in the language the user writes in.
-
-User context:
-{profile.user_context or "No additional user context configured."}
-
-What the user cares about:
-{priorities}
-
-Additional instructions:
-{profile.custom_instructions or "No additional instructions configured."}
+{profile.context_block()}
 
 Current local time: {now.strftime("%A %Y-%m-%d %H:%M %Z")}.
 

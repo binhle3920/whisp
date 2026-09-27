@@ -61,14 +61,14 @@ def extract(filename: str, mime_type: str, data: bytes) -> ToolResult:
         text = _decode(data)
     else:
         raise UnsupportedDocument(f"Cannot read files of type {kind}")
-    return ToolResult(text=_limit(text))
+    return ToolResult(text=limit_text(text))
 
 
 def _decode(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
-def _limit(text: str) -> str:
+def limit_text(text: str) -> str:
     text = text.strip()
     if len(text) > MAX_TEXT_CHARS:
         return text[:MAX_TEXT_CHARS] + "\n[... truncated ...]"
