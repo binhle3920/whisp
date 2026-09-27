@@ -13,7 +13,8 @@ from whisp.core.errors import safe_error_message
 from whisp.core.readiness import ReadinessMonitor
 from whisp.dashboard import router as dashboard_router
 from whisp.logging_config import configure_logging
-from whisp.runtime import build_pipeline
+from whisp.runtime import build_chat_agent, build_pipeline, build_telegram
+from whisp.webhooks.telegram import router as telegram_router
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,9 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.store = None
     app.state.readiness = None
+    app.state.chat_agent = None
+    app.state.chat_tasks = set()
+    app.state.chat_lock = asyncio.Lock()
     tasks: list[asyncio.Task] = []
     try:
         pipeline = build_pipeline(settings, client)
@@ -87,18 +91,37 @@ async def lifespan(app: FastAPI):
             tasks.append(asyncio.create_task(_poll_forever(app)))
         if settings.digest_enabled:
             tasks.append(asyncio.create_task(_digest_forever(app)))
+        if settings.chat_enabled:
+            app.state.chat_agent = build_chat_agent(settings, client, pipeline.store)
+            app.state.telegram = build_telegram(settings, client)
+            if settings.webhook_configured:
+                await _register_webhook(app)
         yield
     finally:
-        for task in tasks:
+        for task in [*tasks, *app.state.chat_tasks]:
             task.cancel()
-        for task in tasks:
+        for task in [*tasks, *app.state.chat_tasks]:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
         await client.aclose()
 
 
+async def _register_webhook(app: FastAPI) -> None:
+    settings = app.state.settings
+    url = f"{settings.public_base_url}/telegram/webhook"
+    try:
+        await app.state.telegram.set_webhook(
+            url, settings.telegram_webhook_secret.get_secret_value()
+        )
+        logger.info("Telegram webhook registered at %s", url)
+    except Exception as exc:
+        # Not fatal: notifications keep working, and the next restart retries.
+        logger.error("Telegram webhook registration failed: %s", safe_error_message(exc))
+
+
 app = FastAPI(title="Whisp", version="0.1.0", lifespan=lifespan)
 app.include_router(dashboard_router)
+app.include_router(telegram_router)
 
 
 @app.get("/healthz")

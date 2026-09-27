@@ -67,8 +67,9 @@ class RecordingOutput(BaseNotificationOutput):
     async def check(self) -> None:
         return None
 
-    async def send(self, message: EmailMessage, processed_text: str) -> None:
+    async def send(self, message: EmailMessage, processed_text: str) -> str | None:
         self.sent.append((message.id, processed_text))
+        return f"tg-{message.id}"
 
     async def send_digest(self, items: list[DigestItem]) -> None:
         if self.fail_digest:
@@ -303,3 +304,16 @@ async def test_disabled_digest_sends_marketing_immediately(tmp_path) -> None:
     assert result.queued == 0
     assert [message_id for message_id, _ in output.sent] == ["promo", "newsletter"]
     assert store.pending_digest() == []
+
+
+async def test_notifications_are_linked_to_their_email(tmp_path) -> None:
+    input_source = FakeInput()
+    input_source.ids = ["message-1"]
+    store = Store(tmp_path / "whisp.db")
+    store.set("history_id", "100")
+    pipeline = make_pipeline(store, input_source, FakeProcessor(), RecordingOutput())
+
+    await pipeline.run_once()
+
+    assert store.email_for_notification("tg-message-1") == "message-1"
+    assert store.email_for_notification("unknown") is None

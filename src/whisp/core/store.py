@@ -49,6 +49,23 @@ class Store:
                     failed INTEGER NOT NULL DEFAULT 0,
                     error TEXT
                 );
+                CREATE TABLE IF NOT EXISTS notification_links (
+                    provider_message_id TEXT PRIMARY KEY,
+                    message_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                CREATE TABLE IF NOT EXISTS chat_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
+                CREATE INDEX IF NOT EXISTS chat_messages_by_chat ON chat_messages(chat_id, id);
+                CREATE TABLE IF NOT EXISTS chat_updates (
+                    update_id TEXT PRIMARY KEY,
+                    received_at TEXT NOT NULL DEFAULT (datetime('now'))
+                );
                 CREATE TABLE IF NOT EXISTS digest_queue (
                     message_id TEXT PRIMARY KEY,
                     thread_id TEXT NOT NULL,
@@ -138,6 +155,57 @@ class Store:
                 "UPDATE digest_queue SET sent_at = ? WHERE message_id = ?",
                 [(sent_at, message_id) for message_id in message_ids],
             )
+
+    def link_notification(self, provider_message_id: str, message_id: str) -> None:
+        with self._connect() as db:
+            db.execute(
+                """
+                INSERT OR REPLACE INTO notification_links(provider_message_id, message_id)
+                VALUES (?, ?)
+                """,
+                (provider_message_id, message_id),
+            )
+
+    def email_for_notification(self, provider_message_id: str) -> str | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT message_id FROM notification_links WHERE provider_message_id = ?",
+                (provider_message_id,),
+            ).fetchone()
+        return str(row["message_id"]) if row else None
+
+    def append_chat(self, chat_id: str, role: str, content: str) -> None:
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO chat_messages(chat_id, role, content) VALUES (?, ?, ?)",
+                (chat_id, role, content),
+            )
+
+    def chat_history(self, chat_id: str, limit: int) -> list[tuple[str, str]]:
+        """Return the latest (role, content) turns for a chat, oldest first."""
+        with self._connect() as db:
+            rows = db.execute(
+                """
+                SELECT role, content FROM (
+                    SELECT id, role, content FROM chat_messages
+                    WHERE chat_id = ? ORDER BY id DESC LIMIT ?
+                ) ORDER BY id
+                """,
+                (chat_id, limit),
+            ).fetchall()
+        return [(str(row["role"]), str(row["content"])) for row in rows]
+
+    def clear_chat(self, chat_id: str) -> None:
+        with self._connect() as db:
+            db.execute("DELETE FROM chat_messages WHERE chat_id = ?", (chat_id,))
+
+    def claim_update(self, update_id: str) -> bool:
+        """Record an inbound update; False if it was already seen (a provider retry)."""
+        with self._connect() as db:
+            cursor = db.execute(
+                "INSERT OR IGNORE INTO chat_updates(update_id) VALUES (?)", (update_id,)
+            )
+            return cursor.rowcount == 1
 
     def start_run(self) -> int:
         with self._connect() as db:

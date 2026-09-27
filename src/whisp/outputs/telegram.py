@@ -14,14 +14,15 @@ SUBJECT_LIMIT = 200
 
 class TelegramOutput(BaseNotificationOutput):
     def __init__(self, token: str, chat_id: str, client: httpx.AsyncClient) -> None:
-        self.url = f"https://api.telegram.org/bot{token}/sendMessage"
+        self.api = f"https://api.telegram.org/bot{token}"
+        self.url = f"{self.api}/sendMessage"
         self.chat_id = chat_id
         self.client = client
 
     async def check(self) -> None:
-        await self._request("check", self.client.get, self.url.replace("sendMessage", "getMe"))
+        await self._request("check", self.client.get, f"{self.api}/getMe")
 
-    async def send(self, message: EmailMessage, processed_text: str) -> None:
+    async def send(self, message: EmailMessage, processed_text: str) -> str | None:
         sender_name, sender_address = parseaddr(message.sender)
         sender_name = re.sub(r"\s+", " ", sender_name).strip()[:120]
         sender_address = re.sub(r"\s+", " ", sender_address).strip()[:254]
@@ -39,7 +40,7 @@ class TelegramOutput(BaseNotificationOutput):
         if len(content) > content_limit:
             content = content[: content_limit - 3].rstrip() + "..."
         text = f"{content}\n\n{divider}\n\n{sender_details}"
-        await self._request(
+        data = await self._request(
             "send",
             self.client.post,
             self.url,
@@ -48,6 +49,34 @@ class TelegramOutput(BaseNotificationOutput):
                 "text": text,
                 "reply_markup": {"inline_keyboard": [[{"text": "Mở email", "url": gmail_url}]]},
             },
+        )
+        return _message_id(data)
+
+    async def send_text(self, chat_id: str, text: str, *, reply_to: str | None = None) -> None:
+        """Send a chat reply, split across messages when it exceeds Telegram's limit."""
+        for index, chunk in enumerate(_split(_plain_text(text) or "…")):
+            payload: dict[str, object] = {"chat_id": chat_id, "text": chunk}
+            if index == 0 and reply_to:
+                payload["reply_parameters"] = {
+                    "message_id": int(reply_to),
+                    "allow_sending_without_reply": True,
+                }
+            await self._request("reply", self.client.post, self.url, json=payload)
+
+    async def send_typing(self, chat_id: str) -> None:
+        await self._request(
+            "typing",
+            self.client.post,
+            f"{self.api}/sendChatAction",
+            json={"chat_id": chat_id, "action": "typing"},
+        )
+
+    async def set_webhook(self, url: str, secret: str) -> None:
+        await self._request(
+            "webhook registration",
+            self.client.post,
+            f"{self.api}/setWebhook",
+            json={"url": url, "secret_token": secret, "allowed_updates": ["message"]},
         )
 
     async def send_digest(self, items: list[DigestItem]) -> None:
@@ -87,6 +116,24 @@ def _digest_entry(index: int, item: DigestItem) -> str:
     if item.summary:
         entry += f"\n   {_plain_text(item.summary)}"
     return entry[:MESSAGE_LIMIT]
+
+
+def _message_id(data: dict) -> str | None:
+    result = data.get("result")
+    if isinstance(result, dict) and "message_id" in result:
+        return str(result["message_id"])
+    return None
+
+
+def _split(text: str) -> list[str]:
+    """Split long text between paragraphs, hard-cutting only a paragraph that is too long."""
+    blocks: list[str] = []
+    for paragraph in text.split("\n\n"):
+        while len(paragraph) > MESSAGE_LIMIT:
+            blocks.append(paragraph[:MESSAGE_LIMIT])
+            paragraph = paragraph[MESSAGE_LIMIT:]
+        blocks.append(paragraph)
+    return _chunk(blocks)
 
 
 def _chunk(blocks: list[str]) -> list[str]:

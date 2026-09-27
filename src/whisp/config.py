@@ -1,3 +1,4 @@
+import re
 from datetime import time
 from functools import lru_cache
 from pathlib import Path
@@ -45,6 +46,40 @@ class Settings(BaseSettings):
     # HTTP Basic login for /dashboard. The dashboard stays disabled until both are set.
     dashboard_username: str | None = None
     dashboard_password: SecretStr | None = None
+
+    # Telegram chat assistant. The webhook is registered only when both of the last two
+    # are set; public_base_url is the HTTPS origin Telegram can reach, e.g. a domain.
+    chat_enabled: bool = True
+    chat_model: str = "openai/gpt-5.4-mini"
+    public_base_url: str | None = None
+    telegram_webhook_secret: SecretStr | None = None
+
+    @field_validator("public_base_url")
+    @classmethod
+    def _validate_public_base_url(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        # Telegram only delivers webhooks over HTTPS.
+        if not value.startswith("https://"):
+            raise ValueError("public_base_url must start with https://")
+        return value.strip().rstrip("/")
+
+    @field_validator("telegram_webhook_secret")
+    @classmethod
+    def _validate_webhook_secret(cls, value: SecretStr | None) -> SecretStr | None:
+        # Telegram accepts 1-256 characters of A-Z, a-z, 0-9, _ and -. Require 32+ so the
+        # secret cannot be guessed.
+        if value is not None and not re.fullmatch(
+            r"[A-Za-z0-9_-]{32,256}", value.get_secret_value()
+        ):
+            raise ValueError(
+                "telegram_webhook_secret must be 32-256 characters of letters, digits, _ or -"
+            )
+        return value
+
+    @property
+    def webhook_configured(self) -> bool:
+        return bool(self.chat_enabled and self.public_base_url and self.telegram_webhook_secret)
 
     @field_validator("dashboard_password")
     @classmethod

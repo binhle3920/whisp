@@ -56,3 +56,22 @@ def test_digest_queue_round_trip(tmp_path) -> None:
     store.mark_digest_sent(["m1"])
     assert store.pending_digest() == []
     assert store.status()["digest_pending"] == 0
+
+
+def test_chat_history_keeps_latest_turns_in_order(tmp_path) -> None:
+    store = Store(tmp_path / "whisp.db")
+    for index in range(5):
+        store.append_chat("42", "user", f"q{index}")
+    store.append_chat("other", "user", "not mine")
+
+    assert store.chat_history("42", 2) == [("user", "q3"), ("user", "q4")]
+    store.clear_chat("42")
+    assert store.chat_history("42", 10) == []
+    assert store.chat_history("other", 10) == [("user", "not mine")]
+
+
+def test_claim_update_is_true_only_once(tmp_path) -> None:
+    store = Store(tmp_path / "whisp.db")
+
+    assert store.claim_update("100") is True
+    assert store.claim_update("100") is False

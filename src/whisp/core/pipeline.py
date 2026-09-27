@@ -92,8 +92,11 @@ class Pipeline:
                             self.store.queue_digest(message, summary=processed.text)
                             queued += 1
                             continue
-                        await self.output.send(message, processed.text)
+                        reference = await self.output.send(message, processed.text)
                         self.store.mark_processed(message)
+                        # Lets a chat reply to this notification refer back to the email.
+                        if reference:
+                            self.store.link_notification(reference, message.id)
                         notified += 1
                     except Exception as exc:
                         failed += 1

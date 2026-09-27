@@ -46,3 +46,20 @@ def test_short_dashboard_password_is_rejected_without_echoing_it() -> None:
         Settings(_env_file=None, dashboard_password="short-pw")
 
     assert "short-pw" not in str(exc_info.value)
+
+
+def test_webhook_requires_https_and_a_strong_secret() -> None:
+    settings = Settings(
+        _env_file=None,
+        public_base_url="https://whisp.example.com/",
+        telegram_webhook_secret="a" * 32,
+    )
+    assert settings.public_base_url == "https://whisp.example.com"
+    assert settings.webhook_configured
+
+    assert not Settings(_env_file=None).webhook_configured
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, public_base_url="http://159.198.66.238")
+    with pytest.raises(ValidationError) as exc_info:
+        Settings(_env_file=None, telegram_webhook_secret="short secret!")
+    assert "short secret!" not in str(exc_info.value)

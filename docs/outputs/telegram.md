@@ -75,6 +75,33 @@ Whisp sends plain text without Telegram parse mode. This prevents email or model
 punctuation from breaking Markdown or HTML formatting. It also removes common Markdown
 markers if a model returns them despite the prompt.
 
+## Chat assistant
+
+Besides notifications, you can chat with Whisp in the same bot conversation. It can:
+
+- search your mailbox (it understands Gmail search syntax and relative dates),
+- read an email and its attachments: PDF, Word, Excel, CSV, text, HTML and images,
+- open links that appear in an email it read or in your own message.
+
+Reply to a notification to ask about that specific email, for example "tóm tắt file
+đính kèm". Send `/reset` to start a new conversation and `/help` for a short guide.
+
+Access is read-only: the assistant cannot send, delete, move or label email. Only the
+configured `WHISP_TELEGRAM_CHAT_ID` gets answers; messages from anyone else are ignored.
+Email, attachment and web content is treated as untrusted data, and the assistant can
+only open links that already appear in an email or your message, so an email cannot
+instruct it to send your data elsewhere. Private and internal network addresses are
+always blocked.
+
+The chat uses `WHISP_CHAT_MODEL` (default `openai/gpt-5.4-mini`), separate from the
+cheaper notification model. It needs a public HTTPS URL for the webhook; see
+[Domain, HTTPS and the Telegram chat assistant](../deploy-vps.md). To try it locally
+without Telegram:
+
+```bash
+uv run whisp chat "tìm email hoá đơn tuần này"
+```
+
 ## Troubleshooting
 
 ### `getUpdates` returns an empty result

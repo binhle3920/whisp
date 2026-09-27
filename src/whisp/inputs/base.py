@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from whisp.core.models import EmailMessage
+from whisp.core.models import EmailMessage, EmailSummary
 
 
 class InputCursorExpired(Exception):
@@ -27,3 +27,19 @@ class BaseEmailInput(ABC):
     @abstractmethod
     async def fetch(self, message_id: str, *, max_chars: int) -> EmailMessage:
         """Fetch and normalize one provider message."""
+
+
+class BaseMailbox(ABC):
+    """Read-only access to a mailbox for the chat assistant."""
+
+    @abstractmethod
+    async def search(self, query: str, *, limit: int) -> list[EmailSummary]:
+        """Return messages matching a provider search query, newest first."""
+
+    @abstractmethod
+    async def fetch(self, message_id: str, *, max_chars: int) -> EmailMessage:
+        """Fetch and normalize one provider message, including its attachment list."""
+
+    @abstractmethod
+    async def download_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        """Return the raw bytes of one attachment."""

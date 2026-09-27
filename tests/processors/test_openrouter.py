@@ -158,3 +158,58 @@ async def test_openrouter_rejects_empty_notification() -> None:
         processor = OpenRouterProcessor(api_key="k", model="test-model", client=client)
         with pytest.raises(ProviderError):
             await processor.process(message)
+
+
+@respx.mock
+async def test_chat_model_parses_tool_calls_and_sends_tools() -> None:
+    from whisp.processors.openrouter import OpenRouterChatModel
+
+    route = respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "search_emails",
+                                        "arguments": '{"query": "invoice"}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            },
+        )
+    )
+    tools = [{"type": "function", "function": {"name": "search_emails", "parameters": {}}}]
+
+    async with httpx.AsyncClient() as client:
+        model = OpenRouterChatModel(api_key="k", model="openai/gpt-5.4-mini", client=client)
+        completion = await model.complete([{"role": "user", "content": "hi"}], tools)
+
+    assert completion.text is None
+    assert [(c.id, c.name, c.arguments) for c in completion.tool_calls] == [
+        ("call_1", "search_emails", '{"query": "invoice"}')
+    ]
+    payload = json.loads(route.calls.last.request.content)
+    assert payload["model"] == "openai/gpt-5.4-mini"
+    assert payload["tools"] == tools
+
+
+@respx.mock
+async def test_chat_model_rejects_empty_reply() -> None:
+    from whisp.processors.openrouter import OpenRouterChatModel
+
+    respx.post("https://openrouter.ai/api/v1/chat/completions").mock(return_value=completion("   "))
+
+    async with httpx.AsyncClient() as client:
+        model = OpenRouterChatModel(api_key="k", model="m", client=client)
+        with pytest.raises(ProviderError):
+            await model.complete([{"role": "user", "content": "hi"}], [])

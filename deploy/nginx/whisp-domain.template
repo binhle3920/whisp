@@ -1,8 +1,10 @@
+# Whisp on a domain. install-domain.sh replaces __DOMAIN__, then certbot adds the HTTPS
+# server block and the HTTP-to-HTTPS redirect to this file.
 # Requires whisp-ratelimit.conf in /etc/nginx/conf.d for the whisp_dashboard zone.
 server {
     listen 80;
     listen [::]:80;
-    server_name 159.198.66.238;
+    server_name __DOMAIN__;
 
     location = /healthz {
         proxy_pass http://127.0.0.1:8080/healthz;
@@ -19,6 +21,17 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         add_header X-Robots-Tag "noindex, nofollow" always;
+    }
+
+    # Only Telegram's published webhook ranges may reach the bot. Whisp also checks the
+    # X-Telegram-Bot-Api-Secret-Token header, so this is defense in depth.
+    location = /telegram/webhook {
+        allow 149.154.160.0/20;
+        allow 91.108.4.0/22;
+        deny all;
+        proxy_pass http://127.0.0.1:8080/telegram/webhook;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
     }
 
     location / {

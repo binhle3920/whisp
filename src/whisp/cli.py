@@ -6,11 +6,12 @@ import httpx
 import uvicorn
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+from whisp.chat.models import ChatRequest
 from whisp.config import get_settings
 from whisp.core.store import Store
 from whisp.inputs.gmail.auth import SCOPES
 from whisp.logging_config import configure_logging
-from whisp.runtime import build_pipeline
+from whisp.runtime import build_chat_agent, build_pipeline
 
 
 def _authorize() -> None:
@@ -46,6 +47,16 @@ async def _digest() -> None:
     print(json.dumps({"sent": sent}, indent=2))
 
 
+async def _chat(question: str) -> None:
+    settings = get_settings()
+    configure_logging(settings.log_level)
+    async with httpx.AsyncClient(timeout=30) as client:
+        agent = build_chat_agent(settings, client, Store(settings.db_path))
+        # A separate history from the Telegram chat, so local testing never mixes in.
+        answer = await agent.reply(ChatRequest(chat_id="cli", text=question))
+    print(answer)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="whisp")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -55,6 +66,8 @@ def main() -> None:
         "--backfill", action="store_true", help="Summarize recent inbox mail on first run"
     )
     subparsers.add_parser("digest", help="Send held marketing emails now")
+    chat = subparsers.add_parser("chat", help="Ask the chat assistant a question locally")
+    chat.add_argument("question")
     subparsers.add_parser("status", help="Show local Whisp state")
     serve = subparsers.add_parser("serve", help="Run the API and background poller")
     serve.add_argument("--host", default="0.0.0.0")
@@ -67,6 +80,8 @@ def main() -> None:
         asyncio.run(_poll(args.backfill))
     elif args.command == "digest":
         asyncio.run(_digest())
+    elif args.command == "chat":
+        asyncio.run(_chat(args.question))
     elif args.command == "status":
         print(json.dumps(Store(get_settings().db_path).status(), indent=2))
     elif args.command == "serve":

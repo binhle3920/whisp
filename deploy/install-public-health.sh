@@ -9,6 +9,7 @@ fi
 deploy_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 site_name="whisp-health"
 
+install -o root -g root -m 644 "$deploy_dir/nginx/whisp-ratelimit.conf" /etc/nginx/conf.d/whisp-ratelimit.conf
 install -o root -g root -m 644 "$deploy_dir/nginx/$site_name" "/etc/nginx/sites-available/$site_name"
 ln -sfn "/etc/nginx/sites-available/$site_name" "/etc/nginx/sites-enabled/$site_name"
 

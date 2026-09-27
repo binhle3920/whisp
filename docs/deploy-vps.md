@@ -90,6 +90,38 @@ rate-limits dashboard requests and returns `404` for every other path.
 Over plain HTTP the dashboard login travels unencrypted. Serve it over HTTPS before
 relying on it from untrusted networks.
 
+### Domain, HTTPS and the Telegram chat assistant
+
+Telegram only delivers webhooks over HTTPS, so the chat assistant needs a domain.
+
+1. Create a DNS `A` record for your domain (for example `whisp.example.com`) pointing at
+   `159.198.66.238`, and wait until `dig +short whisp.example.com` returns that IP.
+2. Install certbot once: `sudo apt install certbot python3-certbot-nginx`.
+3. Install the site and certificate:
+
+   ```bash
+   cd ~/apps/whisp
+   sudo ./deploy/install-domain.sh whisp.example.com you@example.com
+   ```
+
+   This proxies `/healthz`, `/dashboard` and `/telegram/webhook` over HTTPS, redirects
+   HTTP to HTTPS, and only lets Telegram's IP ranges reach the webhook. `/status` stays
+   private. Certbot renews the certificate automatically.
+4. Add the webhook settings to `.env` and redeploy:
+
+   ```env
+   WHISP_PUBLIC_BASE_URL=https://whisp.example.com
+   WHISP_TELEGRAM_WEBHOOK_SECRET=<output of: openssl rand -hex 32>
+   ```
+
+On startup Whisp registers the webhook with Telegram. Check it with:
+
+```bash
+curl -s "https://api.telegram.org/bot<token>/getWebhookInfo"
+```
+
+The `url` should be your domain and `last_error_message` should be absent.
+
 ## Update
 
 Back up the small state database and redeploy:

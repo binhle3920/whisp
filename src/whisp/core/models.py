@@ -9,14 +9,32 @@ class EmailCategory(StrEnum):
 
 
 @dataclass(frozen=True)
+class Attachment:
+    id: str
+    filename: str
+    mime_type: str
+    size: int
+
+
+@dataclass(frozen=True)
 class EmailMessage:
     id: str
     thread_id: str
     sender: str
     subject: str
     body: str
-    internal_date: str | None = NotImplemented
+    internal_date: str | None = None
     category: EmailCategory | None = None
+    attachments: tuple[Attachment, ...] = ()
+
+
+@dataclass(frozen=True)
+class EmailSummary:
+    id: str
+    sender: str
+    subject: str
+    date: str
+    snippet: str
 
 
 @dataclass(frozen=True)

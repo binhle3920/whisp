@@ -1,15 +1,30 @@
+import asyncio
+import base64
+import re
 from typing import Any
 
 import httpx
 
 from whisp.core.errors import ProviderError
-from whisp.core.models import EmailMessage
-from whisp.inputs.base import BaseEmailInput, InputCursorExpired
+from whisp.core.models import EmailMessage, EmailSummary
+from whisp.inputs.base import BaseEmailInput, BaseMailbox, InputCursorExpired
 from whisp.inputs.gmail.auth import GmailAuth
-from whisp.inputs.gmail.parser import parse_message
+from whisp.inputs.gmail.parser import parse_message, parse_summary
+
+MAX_SEARCH_RESULTS = 10
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+# Gmail message and attachment ids are URL-safe tokens. The chat assistant passes ids
+# chosen by a model, so reject anything that could alter the request path.
+_ID = re.compile(r"[A-Za-z0-9_-]{1,1024}")
 
 
-class GmailInput(BaseEmailInput):
+def _checked_id(value: str) -> str:
+    if not _ID.fullmatch(value):
+        raise ProviderError("Gmail", "request (invalid id)")
+    return value
+
+
+class GmailInput(BaseEmailInput, BaseMailbox):
     base_url = "https://gmail.googleapis.com/gmail/v1/users/me"
 
     def __init__(self, auth: GmailAuth, client: httpx.AsyncClient) -> None:
@@ -48,8 +63,34 @@ class GmailInput(BaseEmailInput):
         return str(profile["historyId"])
 
     async def fetch(self, message_id: str, *, max_chars: int) -> EmailMessage:
-        payload = await self._get(f"messages/{message_id}", [("format", "full")])
+        payload = await self._get(f"messages/{_checked_id(message_id)}", [("format", "full")])
         return parse_message(payload, max_chars=max_chars)
+
+    async def search(self, query: str, *, limit: int) -> list[EmailSummary]:
+        limit = max(1, min(limit, MAX_SEARCH_RESULTS))
+        data = await self._get("messages", [("q", query), ("maxResults", str(limit))])
+        ids = [item["id"] for item in data.get("messages", [])]
+        headers = [("format", "metadata")] + [
+            ("metadataHeaders", name) for name in ("From", "Subject", "Date")
+        ]
+        payloads = await asyncio.gather(
+            *(self._get(f"messages/{message_id}", headers) for message_id in ids)
+        )
+        return [parse_summary(payload) for payload in payloads]
+
+    async def download_attachment(self, message_id: str, attachment_id: str) -> bytes:
+        data = await self._get(
+            f"messages/{_checked_id(message_id)}/attachments/{_checked_id(attachment_id)}"
+        )
+        if int(data.get("size", 0)) > MAX_ATTACHMENT_BYTES:
+            raise ProviderError("Gmail", "attachment download (file too large)")
+        encoded = data.get("data")
+        if not isinstance(encoded, str):
+            raise ProviderError("Gmail", "attachment decoding")
+        try:
+            return base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        except ValueError:
+            raise ProviderError("Gmail", "attachment decoding") from None
 
     async def recent_message_ids(self, limit: int) -> list[str]:
         data = await self._get(

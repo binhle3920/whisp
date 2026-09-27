@@ -27,6 +27,25 @@ core.
 The core imports only the three layer contracts. Provider implementations may import core
 models, but the core never imports Gmail, OpenRouter, or Telegram.
 
+### Chat assistant
+
+The chat assistant in `chat/` is provider-independent in the same way. It uses two more
+contracts:
+
+| Contract | Implemented by | Responsibility |
+|---|---|---|
+| `BaseMailbox` (`inputs/base.py`) | `GmailInput` | Read-only search, fetch and attachment download. |
+| `BaseChatModel` (`processors/base.py`) | `OpenRouterChatModel` | One model turn over messages and function tools. |
+
+`webhooks/telegram.py` receives Telegram updates, turns them into a `ChatRequest`, runs
+`ChatAgent` in the background and replies through `TelegramOutput`. When a notification
+is sent, the output returns the provider's message id and the pipeline records which email
+it belongs to, so a reply to that notification reaches the agent with the email id.
+
+Tool output (emails, attachments, web pages) is wrapped in `<untrusted>` blocks. The web
+tool only opens URLs that appear in the user's own messages or in content the agent read,
+and refuses any destination that resolves to a private or internal address.
+
 ## Source layout
 
 ```text
@@ -46,6 +65,14 @@ src/whisp/
 │   └── openrouter.py
 ├── outputs/
 │   ├── base.py
+│   └── telegram.py
+├── chat/
+│   ├── agent.py
+│   ├── documents.py
+│   ├── prompt.py
+│   ├── tools.py
+│   └── web.py
+├── webhooks/
 │   └── telegram.py
 ├── app.py
 ├── cli.py

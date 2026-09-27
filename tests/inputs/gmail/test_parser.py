@@ -58,3 +58,35 @@ def test_promotions_tab_maps_to_promotional_category() -> None:
 def test_unmapped_tabs_are_uncategorized() -> None:
     raw = {"id": "m4", "labelIds": ["INBOX", "CATEGORY_UPDATES"], "payload": {"headers": []}}
     assert parse_message(raw, max_chars=1000).category is None
+
+
+def test_attachments_and_hidden_html_links_are_parsed() -> None:
+    raw = {
+        "id": "m5",
+        "payload": {
+            "headers": [],
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {
+                    "mimeType": "text/html",
+                    "body": {
+                        "data": encoded(
+                            '<p>See <a href="https://example.com/doc?a=1&amp;b=2">here</a></p>'
+                        )
+                    },
+                },
+                {
+                    "mimeType": "application/pdf",
+                    "filename": "report.pdf",
+                    "body": {"attachmentId": "att-9", "size": 2048},
+                },
+            ],
+        },
+    }
+
+    message = parse_message(raw, max_chars=1000)
+
+    assert [(a.id, a.filename, a.size) for a in message.attachments] == [
+        ("att-9", "report.pdf", 2048)
+    ]
+    assert "https://example.com/doc?a=1&b=2" in message.body

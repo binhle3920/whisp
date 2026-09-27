@@ -9,8 +9,8 @@ class BaseNotificationOutput(ABC):
         """Validate that the output provider is ready."""
 
     @abstractmethod
-    async def send(self, message: EmailMessage, processed_text: str) -> None:
-        """Deliver one processed email."""
+    async def send(self, message: EmailMessage, processed_text: str) -> str | None:
+        """Deliver one processed email; return the provider's id for the sent message."""
 
     @abstractmethod
     async def send_digest(self, items: list[DigestItem]) -> None:

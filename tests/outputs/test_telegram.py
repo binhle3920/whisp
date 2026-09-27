@@ -167,3 +167,52 @@ async def test_telegram_digest_failure_does_not_expose_token() -> None:
 
     assert str(exc_info.value) == "Telegram digest failed with HTTP 500"
     assert token not in str(exc_info.value)
+
+
+@respx.mock
+async def test_send_returns_telegram_message_id() -> None:
+    respx.post("https://api.telegram.org/bottest-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {"message_id": 321}})
+    )
+    message = EmailMessage("m1", "t1", "alice@example.com", "Hi", "Body")
+
+    async with httpx.AsyncClient() as client:
+        reference = await TelegramOutput("test-token", "123", client).send(message, "Summary")
+
+    assert reference == "321"
+
+
+@respx.mock
+async def test_send_text_splits_long_replies_and_replies_to_first_chunk() -> None:
+    route = respx.post("https://api.telegram.org/bottest-token/sendMessage").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+    )
+    text = "\n\n".join(f"Đoạn {index}: " + "x" * 900 for index in range(8))
+
+    async with httpx.AsyncClient() as client:
+        await TelegramOutput("test-token", "123", client).send_text("42", text, reply_to="7")
+
+    payloads = [json.loads(call.request.content) for call in route.calls]
+    assert len(payloads) > 1
+    assert all(len(p["text"]) <= 4096 for p in payloads)
+    assert payloads[0]["reply_parameters"]["message_id"] == 7
+    assert all("reply_parameters" not in p for p in payloads[1:])
+    assert all(p["chat_id"] == "42" for p in payloads)
+
+
+@respx.mock
+async def test_set_webhook_sends_secret_and_limits_updates() -> None:
+    route = respx.post("https://api.telegram.org/bottest-token/setWebhook").mock(
+        return_value=httpx.Response(200, json={"ok": True, "result": True})
+    )
+
+    async with httpx.AsyncClient() as client:
+        await TelegramOutput("test-token", "123", client).set_webhook(
+            "https://whisp.example.com/telegram/webhook", "s" * 40
+        )
+
+    assert json.loads(route.calls.last.request.content) == {
+        "url": "https://whisp.example.com/telegram/webhook",
+        "secret_token": "s" * 40,
+        "allowed_updates": ["message"],
+    }
