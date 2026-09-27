@@ -29,6 +29,13 @@ deploy_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 site_name="whisp-domain"
 
 install -o root -g root -m 644 "$deploy_dir/nginx/whisp-ratelimit.conf" /etc/nginx/conf.d/whisp-ratelimit.conf
+# Older whisp-health sites declared the rate-limit zone themselves. Refresh an installed
+# one so the zone is declared only once, in conf.d, or nginx -t fails.
+if [ -e /etc/nginx/sites-available/whisp-health ]; then
+    install -o root -g root -m 644 "$deploy_dir/nginx/whisp-health" /etc/nginx/sites-available/whisp-health
+fi
+# Rewriting the site drops the HTTPS block certbot added earlier; certbot below puts it
+# back using the existing certificate (--keep-until-expiring), so re-running is safe.
 sed "s/__DOMAIN__/$domain/g" "$deploy_dir/nginx/whisp-domain.template" > "/etc/nginx/sites-available/$site_name"
 chmod 644 "/etc/nginx/sites-available/$site_name"
 ln -sfn "/etc/nginx/sites-available/$site_name" "/etc/nginx/sites-enabled/$site_name"
@@ -36,9 +43,9 @@ nginx -t
 systemctl reload nginx
 
 if [ -n "$email" ]; then
-    certbot --nginx -d "$domain" --redirect --non-interactive --agree-tos -m "$email"
+    certbot --nginx -d "$domain" --redirect --non-interactive --agree-tos --keep-until-expiring -m "$email"
 else
-    certbot --nginx -d "$domain" --redirect --non-interactive --agree-tos --register-unsafely-without-email
+    certbot --nginx -d "$domain" --redirect --non-interactive --agree-tos --keep-until-expiring --register-unsafely-without-email
 fi
 
 echo "Whisp is served at https://$domain"

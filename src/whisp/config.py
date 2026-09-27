@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     digest_time: str = "23:00"
     timezone: str = "Asia/Ho_Chi_Minh"
 
-    # HTTP Basic login for /dashboard. The dashboard stays disabled until both are set.
+    # Login for /dashboard. The dashboard stays disabled until both are set.
     dashboard_username: str | None = None
     dashboard_password: SecretStr | None = None
 

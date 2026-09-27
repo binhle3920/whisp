@@ -75,20 +75,15 @@ deploy script.
 
 ### Public IP health check
 
-To publish `/healthz` and the password-protected `/dashboard` through the VPS Nginx
-server while keeping `/status` private, first set `WHISP_DASHBOARD_USERNAME` and
-`WHISP_DASHBOARD_PASSWORD` in `.env` and redeploy, then run:
+To publish `/healthz` on the server's IP over plain HTTP, run:
 
 ```bash
 sudo ./deploy/install-public-health.sh
 ```
 
-The public endpoints are `http://159.198.66.238/healthz` and
-`http://159.198.66.238/dashboard`. Whisp remains bound to `127.0.0.1:8080`; Nginx
-rate-limits dashboard requests and returns `404` for every other path.
-
-Over plain HTTP the dashboard login travels unencrypted. Serve it over HTTPS before
-relying on it from untrusted networks.
+The public endpoint is `http://159.198.66.238/healthz`. Whisp remains bound to
+`127.0.0.1:8080`, and Nginx returns `404` for every other path on the IP. The dashboard is
+only published on the HTTPS domain (below), so its login never travels unencrypted.
 
 ### Domain, HTTPS and the Telegram chat assistant
 
@@ -104,7 +99,7 @@ Telegram only delivers webhooks over HTTPS, so the chat assistant needs a domain
    sudo ./deploy/install-domain.sh whisp.example.com you@example.com
    ```
 
-   This proxies `/healthz`, `/dashboard` and `/telegram/webhook` over HTTPS, redirects
+   This proxies `/healthz`, the dashboard and `/telegram/webhook` over HTTPS, redirects
    HTTP to HTTPS, and only lets Telegram's IP ranges reach the webhook. `/status` stays
    private. Certbot renews the certificate automatically.
 4. Add the webhook settings to `.env` and redeploy:
@@ -121,6 +116,12 @@ curl -s "https://api.telegram.org/bot<token>/getWebhookInfo"
 ```
 
 The `url` should be your domain and `last_error_message` should be absent.
+
+The dashboard is at `https://<domain>/dashboard`. Set `WHISP_DASHBOARD_USERNAME` and
+`WHISP_DASHBOARD_PASSWORD` in `.env` first; it shows a normal login form that password
+managers can save and fill, and keeps you signed in for 7 days. Changing the password
+signs out every session. Re-running `install-domain.sh` is safe and keeps the existing
+certificate.
 
 ## Update
 

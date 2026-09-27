@@ -1,12 +1,15 @@
+import base64
+import hashlib
+import hmac
 import secrets
+import time as clock
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
-from typing import Annotated
+from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from whisp.config import Settings
@@ -14,32 +17,76 @@ from whisp.core.store import Store
 
 RECENT_MESSAGES = 50
 RECENT_ACTIVITY = 20
+SESSION_COOKIE = "whisp_session"
+SESSION_SECONDS = 7 * 24 * 3600
+MAX_FORM_BYTES = 4096
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
-basic_auth = HTTPBasic(auto_error=False)
 
 
-def require_login(
-    request: Request,
-    credentials: Annotated[HTTPBasicCredentials | None, Depends(basic_auth)],
-) -> None:
-    settings = request.app.state.settings
-    if not settings.dashboard_username or settings.dashboard_password is None:
-        # Fail closed: an unconfigured dashboard is unavailable rather than open.
-        raise HTTPException(503, "Dashboard login is not configured")
-    supplied_user = credentials.username if credentials else ""
-    supplied_password = credentials.password if credentials else ""
+def _login_configured(settings: Settings) -> bool:
+    return bool(settings.dashboard_username and settings.dashboard_password is not None)
+
+
+def _session_key(settings: Settings) -> bytes:
+    # Derived from the configured login, so changing the password (or username)
+    # invalidates every existing session without a separate secret to manage.
+    assert settings.dashboard_password is not None and settings.dashboard_username
+    return hmac.new(
+        settings.dashboard_password.get_secret_value().encode(),
+        b"whisp-dashboard-session:" + settings.dashboard_username.encode(),
+        hashlib.sha256,
+    ).digest()
+
+
+def _sign(settings: Settings, payload: str) -> str:
+    return hmac.new(_session_key(settings), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def issue_session(settings: Settings, now: float) -> str:
+    payload = f"{int(now) + SESSION_SECONDS}"
+    encoded = base64.urlsafe_b64encode(payload.encode()).decode()
+    return f"{encoded}.{_sign(settings, payload)}"
+
+
+def valid_session(settings: Settings, token: str | None, now: float) -> bool:
+    if not token or not _login_configured(settings) or token.count(".") != 1:
+        return False
+    encoded, signature = token.split(".")
+    try:
+        payload = base64.urlsafe_b64decode(encoded.encode()).decode()
+        expires = int(payload)
+    except ValueError:
+        return False
+    if not secrets.compare_digest(signature, _sign(settings, payload)):
+        return False
+    return now < expires
+
+
+def credentials_match(settings: Settings, username: str, password: str) -> bool:
+    assert settings.dashboard_password is not None and settings.dashboard_username
     # Compare both fields every time, in constant time, so neither the result nor the
     # timing reveals whether the username alone was right.
-    user_ok = secrets.compare_digest(supplied_user.encode(), settings.dashboard_username.encode())
+    user_ok = secrets.compare_digest(username.encode(), settings.dashboard_username.encode())
     password_ok = secrets.compare_digest(
-        supplied_password.encode(), settings.dashboard_password.get_secret_value().encode()
+        password.encode(), settings.dashboard_password.get_secret_value().encode()
     )
-    if not (user_ok and password_ok):
-        raise HTTPException(
-            401, "Login required", headers={"WWW-Authenticate": 'Basic realm="Whisp"'}
-        )
+    return user_ok and password_ok
+
+
+def _no_store(response: Response) -> Response:
+    # Pages here contain email subjects and senders; keep them out of shared caches.
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _login_page(request: Request, *, error: str | None = None, username: str = "") -> Response:
+    status = 401 if error else 200
+    response = templates.TemplateResponse(
+        request, "login.html", {"error": error, "username": username}, status_code=status
+    )
+    return _no_store(response)
 
 
 def _parse(value: object) -> datetime | None:
@@ -119,14 +166,59 @@ def build_context(
     }
 
 
-@router.get("/dashboard", response_class=HTMLResponse, dependencies=[Depends(require_login)])
-async def dashboard(request: Request) -> HTMLResponse:
+@router.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(request: Request) -> Response:
     state = request.app.state
+    if not _login_configured(state.settings):
+        # Fail closed: an unconfigured dashboard is unavailable rather than open.
+        raise HTTPException(503, "Dashboard login is not configured")
+    if not valid_session(state.settings, request.cookies.get(SESSION_COOKIE), clock.time()):
+        return RedirectResponse("/dashboard/login", status_code=303)
     if state.store is None:
         raise HTTPException(503, "Whisp is not configured")
     readiness = state.readiness.snapshot() if state.readiness is not None else None
     context = build_context(state.store, state.settings, readiness)
-    response = templates.TemplateResponse(request, "dashboard.html", context)
-    # The page contains email subjects and senders; keep it out of shared caches.
-    response.headers["Cache-Control"] = "no-store"
+    return _no_store(templates.TemplateResponse(request, "dashboard.html", context))
+
+
+@router.get("/dashboard/login", response_class=HTMLResponse)
+async def login_form(request: Request) -> Response:
+    if not _login_configured(request.app.state.settings):
+        raise HTTPException(503, "Dashboard login is not configured")
+    return _login_page(request)
+
+
+@router.post("/dashboard/login")
+async def login(request: Request) -> Response:
+    settings = request.app.state.settings
+    if not _login_configured(settings):
+        raise HTTPException(503, "Dashboard login is not configured")
+    body = await request.body()
+    if len(body) > MAX_FORM_BYTES:
+        raise HTTPException(413)
+    form = parse_qs(body.decode("utf-8", errors="replace"))
+    username = form.get("username", [""])[0]
+    password = form.get("password", [""])[0]
+    if not credentials_match(settings, username, password):
+        return _login_page(request, error="Wrong username or password.", username=username)
+    # Always land on the dashboard; never redirect to a caller-supplied URL.
+    response = RedirectResponse("/dashboard", status_code=303)
+    response.set_cookie(
+        SESSION_COOKIE,
+        issue_session(settings, clock.time()),
+        max_age=SESSION_SECONDS,
+        path="/dashboard",
+        httponly=True,
+        # Secure cookies are still sent to http://127.0.0.1 through the SSH tunnel;
+        # browsers treat localhost as a secure context.
+        secure=True,
+        samesite="lax",
+    )
+    return response
+
+
+@router.post("/dashboard/logout")
+async def logout() -> Response:
+    response = RedirectResponse("/dashboard/login", status_code=303)
+    response.delete_cookie(SESSION_COOKIE, path="/dashboard", secure=True, httponly=True)
     return response

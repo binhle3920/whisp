@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Whisp Login{% endblock %}
+{% block content %}
+<div class="login card">
+  <h1>Whisp</h1>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  {# Standard field names and autocomplete hints let password managers save and fill it. #}
+  <form method="post" action="/dashboard/login" autocomplete="on">
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text" autocomplete="username"
+           autocapitalize="none" spellcheck="false" value="{{ username }}" required autofocus>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Log in</button>
+  </form>
+</div>
+{% endblock %}
