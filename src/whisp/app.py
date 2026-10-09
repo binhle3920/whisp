@@ -15,6 +15,7 @@ from whisp.core.errors import safe_error_message
 from whisp.core.pipeline import Pipeline
 from whisp.core.readiness import ReadinessMonitor
 from whisp.dashboard import router as dashboard_router
+from whisp.landing import router as landing_router
 from whisp.logging_config import configure_logging
 from whisp.outputs.telegram import TelegramOutput
 from whisp.runtime import build_runtime
@@ -107,6 +108,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Whisp", version=__version__, lifespan=lifespan)
+app.include_router(landing_router)
 app.include_router(dashboard_router)
 app.include_router(telegram_router)
 

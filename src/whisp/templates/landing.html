@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Whisp is a self-hosted AI layer between your inbox and you: it reads new Gmail, briefs you on Telegram, and answers questions about your mail.">
+  <title>Whisp — an AI layer between your inbox and you</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --panel: #ffffff; --border: #e3e6eb; --text: #1b1f24;
+      --muted: #5d6676; --accent: #3056d3; --accent-bg: #eaf0ff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1216; --panel: #171b21; --border: #2a3039; --text: #e6e9ee;
+        --muted: #8b95a5; --accent: #7fa2ff; --accent-bg: #1a2442;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 0 16px 64px; }
+    nav { display: flex; align-items: center; gap: 16px; padding: 20px 0; }
+    nav .brand { font-weight: 700; font-size: 18px; margin-right: auto; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .hero { padding: 56px 0 40px; max-width: 680px; }
+    .hero h1 { font-size: clamp(32px, 6vw, 48px); line-height: 1.1; margin: 0 0 16px; }
+    .hero p { font-size: 19px; color: var(--muted); margin: 0 0 28px; }
+    .button {
+      display: inline-block; font-weight: 600; padding: 10px 18px; border-radius: 8px;
+      background: var(--accent); color: var(--panel); margin: 0 8px 8px 0;
+    }
+    .button.secondary { background: var(--accent-bg); color: var(--accent); }
+    .button:hover { text-decoration: none; filter: brightness(1.05); }
+    h2 { font-size: 22px; margin: 56px 0 16px; }
+    .flow {
+      display: grid; gap: 12px; align-items: stretch;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      padding: 18px 20px;
+    }
+    .card h3 { font-size: 16px; margin: 0 0 6px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15px; }
+    .step {
+      font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      color: var(--accent);
+    }
+    ul.points { padding-left: 20px; margin: 0; }
+    ul.points li { margin: 6px 0; }
+    footer {
+      margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--border);
+      color: var(--muted); font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px 20px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <nav>
+    <span class="brand">Whisp</span>
+    <a href="{{ repo_url }}">GitHub</a>
+    <a href="/dashboard">Dashboard</a>
+  </nav>
+
+  <section class="hero">
+    <h1>An AI layer between your inbox and you.</h1>
+    <p>
+      Whisp watches your Gmail, asks an AI assistant what each new email means for you,
+      and sends a short, personal briefing to Telegram. Marketing mail waits for one
+      evening digest instead of interrupting your day.
+    </p>
+    <a class="button" href="{{ repo_url }}">View on GitHub</a>
+    <a class="button secondary" href="{{ repo_url }}/blob/main/docs/getting-started.md">Get started</a>
+  </section>
+
+  <h2>How it works</h2>
+  <div class="flow">
+    <div class="card">
+      <div class="step">1 · Read</div>
+      <h3>Gmail</h3>
+      <p>New messages are picked up with read-only access. Whisp never changes your mailbox.</p>
+    </div>
+    <div class="card">
+      <div class="step">2 · Understand</div>
+      <h3>Your AI assistant</h3>
+      <p>A model of your choice on OpenRouter writes a briefing tuned to your role and priorities.</p>
+    </div>
+    <div class="card">
+      <div class="step">3 · Notify</div>
+      <h3>Telegram</h3>
+      <p>The briefing lands in your chat. Promotions are batched into a daily digest.</p>
+    </div>
+  </div>
+
+  <h2>Talk to your inbox</h2>
+  <div class="card">
+    <p>
+      Reply to a notification or message the bot directly. The assistant can search your
+      mail, open an email, read PDF and document attachments, and follow links you or
+      your email mention — then answer in the chat.
+    </p>
+  </div>
+
+  <h2>Built to be trusted</h2>
+  <div class="card">
+    <ul class="points">
+      <li><strong>Self-hosted.</strong> Runs on your laptop, home server, or VPS with a single SQLite file.</li>
+      <li><strong>Read-only Gmail.</strong> It requests the narrowest scope it needs.</li>
+      <li><strong>Email is untrusted input.</strong> Content is fenced off from instructions to resist prompt injection.</li>
+      <li><strong>No secrets in logs.</strong> Tokens and request URLs are kept out of error output.</li>
+      <li><strong>Open source.</strong> Licensed under AGPL-3.0-or-later.</li>
+    </ul>
+  </div>
+
+  <footer>
+    <span>Whisp {{ version }}</span>
+    <a href="{{ repo_url }}">Source</a>
+    <a href="{{ repo_url }}/blob/main/docs/architecture.md">Architecture</a>
+  </footer>
+</main>
+</body>
+</html>
