@@ -2,7 +2,7 @@ import re
 from html import unescape
 
 # Stops at whitespace and characters that commonly wrap a URL in prose or markup.
-_URL = re.compile(r"https?://[^\s<>\"'()\[\]{}]+", re.IGNORECASE)
+URL_PATTERN = re.compile(r"https?://[^\s<>\"'()\[\]{}]+", re.IGNORECASE)
 
 
 def html_to_text(value: str) -> str:
@@ -21,4 +21,4 @@ def html_links(value: str) -> list[str]:
 
 def find_urls(value: str) -> list[str]:
     """Return http(s) URLs in plain text, without trailing sentence punctuation."""
-    return list(dict.fromkeys(url.rstrip(".,;:!?") for url in _URL.findall(value)))
+    return list(dict.fromkeys(url.rstrip(".,;:!?") for url in URL_PATTERN.findall(value)))

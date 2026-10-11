@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 from whisp.chat.models import ChatRequest
 from whisp.chat.prompt import chat_system_prompt
 from whisp.chat.tools import DEFINITIONS, MailTools
+from whisp.core.guardrails import redact
 from whisp.core.store import Store
 from whisp.processors.base import BaseChatModel
 from whisp.processors.profile import AssistantProfile
@@ -55,7 +56,8 @@ class ChatAgent:
             {"role": "user", "content": user_content},
         ]
 
-        answer = await self._run(messages, tools)
+        # Redacted before storing too, so a code cannot resurface from chat history.
+        answer = redact(await self._run(messages, tools))
         self.store.append_chat(request.chat_id, "user", request.text)
         self.store.append_chat(request.chat_id, "assistant", answer)
         return answer

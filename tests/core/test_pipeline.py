@@ -52,6 +52,11 @@ class FakeProcessor(BaseEmailProcessor):
         )
 
 
+class OtpProcessor(BaseEmailProcessor):
+    async def process(self, message: EmailMessage) -> ProcessedEmail:
+        return ProcessedEmail(text="Mã OTP từ Vietcombank là 482913.")
+
+
 class LeakyProcessor(BaseEmailProcessor):
     async def process(self, message: EmailMessage) -> ProcessedEmail:
         raise RuntimeError(message.body)
@@ -275,6 +280,44 @@ async def test_messages_read_before_processing_are_skipped(tmp_path) -> None:
     # Read mail never reaches the processor, and skipping it is not a failure.
     assert processor.processed == ["unread"]
     assert store.get("history_id") == "101"
+
+
+async def test_otp_codes_are_masked_before_notifying(tmp_path) -> None:
+    input_source = FakeInput()
+    input_source.ids = ["otp"]
+    output = RecordingOutput()
+    store = Store(tmp_path / "whisp.db")
+    store.set("history_id", "100")
+    pipeline = Pipeline(
+        store=store,
+        input_source=input_source,
+        processor=OtpProcessor(),
+        output=output,
+        max_messages=25,
+        email_max_chars=12_000,
+    )
+
+    await pipeline.run_once()
+
+    assert output.sent == [("otp", "Mã OTP từ Vietcombank là ••••••.")]
+
+
+async def test_otp_codes_are_masked_in_the_digest(tmp_path) -> None:
+    output = RecordingOutput()
+    store = Store(tmp_path / "whisp.db")
+    store.queue_digest(
+        EmailMessage("promo", "t", "shop@example.com", "Your verification code is 482913", "Body"),
+        summary="Code 482913 unlocks 20% off",
+    )
+    pipeline = make_pipeline(store, FakeInput(), FakeProcessor(), output)
+
+    await pipeline.send_digest()
+
+    [item] = output.digests[0]
+    assert (item.subject, item.summary) == (
+        "Your verification code is ••••••",
+        "Code •••••• unlocks 20% off",
+    )
 
 
 async def test_send_digest_delivers_pending_once(tmp_path) -> None:

@@ -46,12 +46,31 @@ Tool output (emails, attachments, web pages) is wrapped in `<untrusted>` blocks.
 tool only opens URLs that appear in the user's own messages or in content the agent read,
 and refuses any destination that resolves to a private or internal address.
 
+### Output guardrails
+
+Anything that would let its reader into an account is kept out of Telegram.
+`redact()` in `core/guardrails.py` runs on notifications, digest items and chat replies
+just before they reach the output; chat replies are masked before they are stored as
+history too. It masks:
+
+- sign-in, password-reset, verification and invite links, judged by their path, query
+  keys such as `token=`, or wording next to them;
+- API keys and tokens with a known prefix (`ghp_`, `sk-`, `AKIA`, private-key blocks, ...);
+- passwords written after "password" or "mật khẩu", when the value looks like a credential;
+- one-time codes: numbers near OTP wording, in English and Vietnamese.
+
+Amounts, names, dates and ordinary links pass through. The processor and chat prompts
+also tell the model not to write these values out; the filter catches the common formats
+when the model ignores that. They still reach the processor, since it reads the full
+email.
+
 ## Source layout
 
 ```text
 src/whisp/
 ├── core/
 │   ├── errors.py        # SafeWhispError, ProviderError, safe_error_message
+│   ├── guardrails.py    # masks codes, credentials and sign-in links in output
 │   ├── models.py        # provider-neutral value objects
 │   ├── pipeline.py      # polling, delivery, digest scheduling
 │   ├── readiness.py

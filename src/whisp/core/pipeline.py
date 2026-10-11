@@ -1,9 +1,11 @@
 import asyncio
 import logging
+from dataclasses import replace
 from datetime import datetime, time, timedelta
 from typing import Literal
 
 from whisp.core.errors import safe_error_message, sanitized_errors
+from whisp.core.guardrails import redact
 from whisp.core.models import EmailCategory, PollResult
 from whisp.core.store import CURSOR_KEY, LAST_DIGEST_KEY, Store
 from whisp.inputs.base import BaseEmailInput, InputCursorExpired
@@ -136,7 +138,7 @@ class Pipeline:
         if self.digest_enabled and processed.marketing:
             self.store.queue_digest(message, summary=processed.text)
             return "queued"
-        reference = await self.output.send(message, processed.text)
+        reference = await self.output.send(message, redact(processed.text))
         self.store.mark_processed(message)
         # Lets a chat reply to this notification refer back to the email.
         if reference:
@@ -167,7 +169,18 @@ class Pipeline:
             items = self.store.pending_digest()
             if not items:
                 return 0
-            await self.output.send_digest(items)
+            # Redacted at send time rather than when queued, so the filter also covers
+            # items queued before it existed.
+            await self.output.send_digest(
+                [
+                    replace(
+                        item,
+                        subject=redact(item.subject),
+                        summary=redact(item.summary) if item.summary else item.summary,
+                    )
+                    for item in items
+                ]
+            )
             # Marked only after the output accepts the digest: a crash in between repeats
             # the digest rather than losing it, matching single notifications.
             self.store.mark_digest_sent([item.message_id for item in items])

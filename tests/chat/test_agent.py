@@ -111,3 +111,15 @@ async def test_image_attachments_reach_the_model_as_image_parts(tmp_path) -> Non
     image_turn = model.calls[1][0][-1]
     assert image_turn["role"] == "user"
     assert image_turn["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+async def test_otp_codes_are_masked_in_replies_and_history(tmp_path) -> None:
+    store = Store(tmp_path / "whisp.db")
+    model = ScriptedModel(ChatCompletion(text="Mã OTP của bạn là 482913."))
+
+    answer = await make_agent(store, model, FakeMailbox()).reply(
+        ChatRequest(chat_id="42", text="Mã OTP là gì?")
+    )
+
+    assert answer == "Mã OTP của bạn là ••••••."
+    assert store.chat_history("42", 10)[-1] == ("assistant", answer)
