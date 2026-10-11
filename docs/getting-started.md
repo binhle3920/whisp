@@ -58,7 +58,7 @@ On the first run, use backfill to summarize recent inbox messages immediately:
 uv run whisp poll --backfill
 ```
 
-Whisp checks the Telegram bot, reads up to 25 recent inbox messages, sends their content
+Whisp checks the Telegram bot, reads up to 25 recent unread inbox messages, sends their content
 to the configured OpenRouter model, and delivers each personalized briefing to Telegram.
 It prints a result similar to:
 

@@ -26,6 +26,8 @@ class EmailMessage:
     internal_date: str | None = None
     category: EmailCategory | None = None
     attachments: tuple[Attachment, ...] = ()
+    # Inputs without a read state report every message as unread.
+    unread: bool = True
 
 
 @dataclass(frozen=True)

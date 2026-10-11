@@ -91,6 +91,7 @@ def parse_message(payload: dict[str, Any], *, max_chars: int) -> EmailMessage:
         internal_date=payload.get("internalDate"),
         category=_category(payload.get("labelIds", [])),
         attachments=_find_attachments(payload.get("payload", {})),
+        unread="UNREAD" in payload.get("labelIds", []),
     )
 
 

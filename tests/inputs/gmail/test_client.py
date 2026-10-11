@@ -88,3 +88,44 @@ async def test_ids_that_could_alter_the_request_path_are_rejected() -> None:
             await gmail.fetch("../drafts", max_chars=1000)
         with pytest.raises(ProviderError, match="invalid id"):
             await gmail.download_attachment("m1", "a/../b")
+
+
+@respx.mock
+async def test_changes_skip_read_messages() -> None:
+    def added(message_id: str, *labels: str) -> dict[str, object]:
+        return {"messagesAdded": [{"message": {"id": message_id, "labelIds": list(labels)}}]}
+
+    respx.get(f"{BASE}/history").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "historyId": "200",
+                "history": [
+                    added("unread", "INBOX", "UNREAD"),
+                    added("read", "INBOX"),
+                    added("spam", "INBOX", "UNREAD", "SPAM"),
+                ],
+            },
+        )
+    )
+
+    async with httpx.AsyncClient() as client:
+        ids, cursor = await GmailInput(auth=FakeAuth(), client=client).changes(  # type: ignore[arg-type]
+            "100"
+        )
+
+    assert ids == ["unread"]
+    assert cursor == "200"
+
+
+@respx.mock
+async def test_backfill_only_requests_unread_inbox_messages() -> None:
+    listing = respx.get(f"{BASE}/messages").mock(
+        return_value=httpx.Response(200, json={"messages": [{"id": "a1"}]})
+    )
+
+    async with httpx.AsyncClient() as client:
+        ids = await GmailInput(auth=FakeAuth(), client=client).recent_message_ids(25)  # type: ignore[arg-type]
+
+    assert ids == ["a1"]
+    assert "is:unread" in listing.calls.last.request.url.params["q"]

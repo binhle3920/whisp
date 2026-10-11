@@ -14,9 +14,10 @@ from whisp.processors.base import BaseEmailProcessor
 
 
 class FakeInput(BaseEmailInput):
-    def __init__(self, promotional: set[str] | None = None) -> None:
+    def __init__(self, promotional: set[str] | None = None, read: set[str] | None = None) -> None:
         self.ids: list[str] = []
         self.promotional = promotional or set()
+        self.read = read or set()
 
     async def current_cursor(self) -> str:
         return "100"
@@ -35,6 +36,7 @@ class FakeInput(BaseEmailInput):
             subject="Review",
             body="Please review by Friday"[:max_chars],
             category=EmailCategory.PROMOTIONAL if message_id in self.promotional else None,
+            unread=message_id not in self.read,
         )
 
 
@@ -254,6 +256,25 @@ async def test_marketing_is_held_for_digest_and_other_mail_is_sent(tmp_path) -> 
         ("promo", None),
         ("newsletter", "Summary of Review"),
     ]
+
+
+async def test_messages_read_before_processing_are_skipped(tmp_path) -> None:
+    input_source = FakeInput(read={"read"})
+    input_source.ids = ["read", "unread"]
+    processor = FakeProcessor()
+    output = RecordingOutput()
+    store = Store(tmp_path / "whisp.db")
+    store.set("history_id", "100")
+    pipeline = make_pipeline(store, input_source, processor, output)
+
+    result = await pipeline.run_once()
+
+    assert result.skipped == 1
+    assert result.notified == 1
+    assert output.sent == [("unread", "Summary of Review")]
+    # Read mail never reaches the processor, and skipping it is not a failure.
+    assert processor.processed == ["unread"]
+    assert store.get("history_id") == "101"
 
 
 async def test_send_digest_delivers_pending_once(tmp_path) -> None:

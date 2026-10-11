@@ -90,3 +90,10 @@ def test_attachments_and_hidden_html_links_are_parsed() -> None:
         ("att-9", "report.pdf", 2048)
     ]
     assert "https://example.com/doc?a=1&b=2" in message.body
+
+
+def test_unread_label_maps_to_unread_state() -> None:
+    unread = {"id": "m5", "labelIds": ["INBOX", "UNREAD"], "payload": {"headers": []}}
+    read = {"id": "m6", "labelIds": ["INBOX"], "payload": {"headers": []}}
+    assert parse_message(unread, max_chars=1000).unread
+    assert not parse_message(read, max_chars=1000).unread

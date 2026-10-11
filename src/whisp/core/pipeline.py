@@ -99,7 +99,9 @@ class Pipeline:
                 last_error = safe_error_message(exc)
                 logger.error("Failed to process input message %s: %s", message_id, last_error)
                 continue
-            if outcome == "queued":
+            if outcome == "read":
+                skipped += 1
+            elif outcome == "queued":
                 queued += 1
             else:
                 notified += 1
@@ -119,8 +121,12 @@ class Pipeline:
         )
         return result, last_error
 
-    async def _deliver(self, message_id: str) -> Literal["notified", "queued"]:
+    async def _deliver(self, message_id: str) -> Literal["notified", "queued", "read"]:
         message = await self.input.fetch(message_id, max_chars=self.email_max_chars)
+        # Discovery already filters out read mail, but the user may have opened the
+        # message since then. Checking the fetched state avoids a redundant notification.
+        if not message.unread:
+            return "read"
         # The input's own categorization is trusted first so obvious promotions skip the
         # processor call entirely.
         if self.digest_enabled and message.category is EmailCategory.PROMOTIONAL:

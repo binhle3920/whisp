@@ -14,8 +14,8 @@ from whisp.inputs.gmail.parser import parse_message, parse_summary
 
 MAX_SEARCH_RESULTS = 10
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
-# Messages carrying any of these labels are never notified, even when also in the inbox.
 EXCLUDED_LABELS = frozenset({"SPAM", "TRASH", "SENT", "DRAFT"})
+REQUIRED_LABELS = frozenset({"INBOX", "UNREAD"})
 # Gmail message and attachment ids are URL-safe tokens. The chat assistant passes ids
 # chosen by a model, so reject anything that could alter the request path.
 _ID = re.compile(r"[A-Za-z0-9_-]{1,1024}")
@@ -90,7 +90,7 @@ class GmailInput(BaseEmailInput, BaseMailbox):
 
     async def recent_message_ids(self, limit: int) -> list[str]:
         data = await self._get(
-            "messages", [("q", "in:inbox -in:spam -in:trash"), ("maxResults", str(limit))]
+            "messages", [("q", "in:inbox is:unread -in:spam -in:trash"), ("maxResults", str(limit))]
         )
         return [item["id"] for item in data.get("messages", [])]
 
@@ -112,7 +112,7 @@ class GmailInput(BaseEmailInput, BaseMailbox):
                 for added in event.get("messagesAdded", []):
                     message = added.get("message", {})
                     labels = set(message.get("labelIds", []))
-                    if "INBOX" in labels and not labels & EXCLUDED_LABELS:
+                    if labels >= REQUIRED_LABELS and not labels & EXCLUDED_LABELS:
                         ids.append(message["id"])
             page_token = data.get("nextPageToken")
             if not page_token:
